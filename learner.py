@@ -10,8 +10,8 @@ from config import config
 def benchmark(task, num_batches):
 	print('running benchmark!')
 
-	# given the task, get the neural architecture and data shape
-	global net, criterion, device
+	# given the task, get the neural architecture and data shape from the 
+	
 
 	net.to(device)
 	optimizer = get_optimizer(net)
@@ -59,6 +59,5 @@ if (__name__ == '__main__'):
 
 	# starts worker
 	print('starting worker')
-	time.sleep(60)
-
 	axon.worker.init()
+
