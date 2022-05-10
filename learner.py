@@ -2,9 +2,16 @@ import axon
 import signal
 import time
 import torch
+from tqdm import tqdm
 
 from config import config
 from tasks import tasks
+
+BATCH_SIZE = 32
+
+device = 'cpu'
+if torch.cuda.is_available():
+	device = 'cuda:0'
 
 parameter_server = None
 def get_parameter_server():
@@ -13,10 +20,14 @@ def get_parameter_server():
 	if (parameter_server == None):
 		parameter_server = axon.client.RemoteWorker(config.parameter_server_ip)
 
+	return parameter_server
+
 # rpc that runs benchmark
 @axon.worker.rpc()
 def benchmark(task_name, num_batches):
 	print('running benchmark!')
+
+	global device
 
 	# given the task, get the neural architecture and data shape from the 
 	
@@ -24,12 +35,15 @@ def benchmark(task_name, num_batches):
 
 	parameters = ps.rpcs.get_parameters(task_name)
 
-	net = tasks[task_name][network_architecture]()
+	task_description = tasks[task_name]
+
+	net = task_description['network_architecture']()
 
 	# sets parameters
 
 	net.to(device)
-	optimizer = get_optimizer(net)
+	optimizer = task_description['optimizer'](net)
+	criterion = task_description['loss']
 
 	# creating random data
 	x_benchmark = torch.randn([BATCH_SIZE*num_batches, 784], dtype=torch.float32)
