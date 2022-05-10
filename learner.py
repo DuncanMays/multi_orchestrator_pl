@@ -4,14 +4,29 @@ import time
 import torch
 
 from config import config
+from tasks import tasks
+
+parameter_server = None
+def get_parameter_server():
+	global parameter_server
+
+	if (parameter_server == None):
+		parameter_server = axon.client.RemoteWorker(config.parameter_server_ip)
 
 # rpc that runs benchmark
 @axon.worker.rpc()
-def benchmark(task, num_batches):
+def benchmark(task_name, num_batches):
 	print('running benchmark!')
 
 	# given the task, get the neural architecture and data shape from the 
 	
+	ps = get_parameter_server()
+
+	parameters = ps.rpcs.get_parameters(task_name)
+
+	net = tasks[task_name][network_architecture]()
+
+	# sets parameters
 
 	net.to(device)
 	optimizer = get_optimizer(net)
