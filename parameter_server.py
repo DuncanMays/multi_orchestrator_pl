@@ -7,7 +7,7 @@ data_map = {'mnist_ffn': (flat_x_train, y_train), 'mnist_cnn': (img_x_train, y_t
 
 model_map = {}
 for task_name in tasks:
-	model_map[task_name] = tasks[task_name]['network_architecture']
+	model_map[task_name] = tasks[task_name]['network_architecture']()
 
 @axon.worker.rpc()
 def get_task_description(task_name):
@@ -30,4 +30,5 @@ def clear_params(task_name):
 def get_parameters(task_name):
 	return list(model_map[task_name].parameters())
 
+print('starting parameter server')
 axon.worker.init()
