@@ -7,13 +7,15 @@ def set_training_device():
 	else:
 		return 'cpu'
 
-primative = {
+config_dict = {
 	'data_server_ip': '192.168.2.19',
 	'data_server_port': 5002,
 	'notice_board_ip': '192.168.2.19',
 	'parameter_server_ip': '192.168.2.19',
 	'parameter_server_port': 5002,
-	'training_device': set_training_device()
+	'training_device': set_training_device(),
+	'default_task_name': 'mnist_ffn',
+	'delta': 1
 }
 
-config = SimpleNamespace(**primative)
+config = SimpleNamespace(**config_dict)

@@ -1,6 +1,16 @@
 import gurobi
 from itertools import product
 
+# this function manually instantiates an empty 2D list, this can't be done with [None]*5 because of aliasing issues
+def get_2D_list(W, H):
+	l = []
+	for w in range(W):
+		r = []
+		for h in range(H):
+			r.append(None)
+		l.append(r)
+	return l
+
 def data_allocation(workers, requesters):
 	# ? some sort of configuration object?
 	GRB = gurobi.GRB()
@@ -10,20 +20,8 @@ def data_allocation(workers, requesters):
 	num_workers = len(workers)
 	num_requesters = len(requesters)
 
-	# alpha represents the size of a data shard
-	alpha = 0.5
 	# the minimum number of shards assigned to each worker
 	delta = 100
-
-	# this function manually instantiates an empty 2D list, this can't be done with [None]*5 because of aliasing issues
-	def get_2D_list(W, H):
-		l = []
-		for w in range(W):
-			r = []
-			for h in range(H):
-				r.append(None)
-			l.append(r)
-		return l
 
 	# the 2D list holding the binary decision variables representing if worker j has been assigned tasks from requester i
 	x = get_2D_list(num_requesters, num_workers)
@@ -43,7 +41,7 @@ def data_allocation(workers, requesters):
 	m.update()
 
 	# the objective is to minimize the total cost of allocation
-	objective_fn = gurobi.quicksum([ workers[j].p * d[i][j] for (i, j) in combinations ])
+	objective_fn = gurobi.quicksum([ workers[j].price * d[i][j] for (i, j) in combinations ])
 	m.setObjective(objective_fn, GRB.MINIMIZE)
 
 	# we now define contraints
@@ -60,18 +58,18 @@ def data_allocation(workers, requesters):
 	# the last constraints are explicitly stated in the problem formulation
 
 	# this function represents the time that worker j will take to evaluate the learning task assigned to them from requester i
-	delay = lambda i, j : (2*requesters[i].o + alpha*d[i][j])/workers[j].b + requesters[i].mu*d[i][j]/workers[j].c
+	delay = lambda i, j : 2*workers[j].param_time + d[i][j]*workers[j].data_time + requesters[i].num_iters*d[i][j]/workers[j].training_rate
 
 	# c1 means the time delay must not exceed the deadline of requester i
-	m.addConstrs((delay(i, j) <= requesters[i].T for (i, j) in combinations) , 'c1')
+	# m.addConstrs((delay(i, j) <= requesters[i].T for (i, j) in combinations) , 'c1')
 
 	# c2 is an energy constraint
 
 	# c3 means that the total number of data shards assigned from a requester must equal some integer
-	m.addConstrs(( sum([ d[i][j] for j in range(num_workers) ]) == requesters[i].D for i in range(num_requesters)), 'c3')
+	m.addConstrs(( sum([ d[i][j] for j in range(num_workers) ]) == requesters[i].dataset_size for i in range(num_requesters)), 'c3')
 
 	# c4 means that the total cost of assignment for a requester may not exceed their budget
-	m.addConstrs((sum([ workers[j].p*d[i][j] for j in range(num_workers) ]) <= requesters[i].B for i in range(num_requesters)), 'c4')
+	m.addConstrs((sum([ workers[j].price*d[i][j] for j in range(num_workers) ]) <= requesters[i].budget for i in range(num_requesters)), 'c4')
 
 	# # c5 means that the a worker may only recieve data shards from one requester
 	m.addConstrs(( gurobi.quicksum([ x[i][j] for i in range(num_requesters) ] ) <= 1 for j in range(num_workers)), 'c5')
@@ -83,8 +81,16 @@ def data_allocation(workers, requesters):
 
 	m.optimize()
 
-	for (i, j) in combinations:
-		if (x[i][j].X == 1):
-			print(f'worker: {j} got: {d[i][j].X} data slices from requester {i}')
+	association = get_2D_list(num_requesters, num_workers)
+	allocation = get_2D_list(num_requesters, num_workers)
 
-	return x, d
+	for (i, j) in combinations:
+
+		# prints an output
+		# if (x[i][j].X == 1):
+		# 	print(f'worker: {j} got: {d[i][j].X} data slices from requester {i}')
+
+		association[i][j] = x[i][j].X
+		allocation[i][j] = d[i][j].X
+
+	return association, allocation
