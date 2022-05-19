@@ -3,6 +3,8 @@ import signal
 import time
 import torch
 from tqdm import tqdm
+from threading import Thread, Lock
+from itertools import product
 
 from config import config
 from tasks import tasks
@@ -13,8 +15,18 @@ price = 0.1
 num_test_shards = 20
 BATCH_SIZE = 32
 
+task_names = [task_name for task_name in tasks]
 task_name = config.default_task_name
 num_shards = config.delta
+
+allowed_states = ['idle', 'training', 'downloading', 'uploading']
+state_lock = Lock()
+state = 'idle'
+
+# the number of times each learner will download the model while benchmarking
+benchmark_downloads = 5
+# the number of shards each learner will train on while benchmarking
+benchmark_shards = 10
 
 device = 'cpu'
 if torch.cuda.is_available():
@@ -29,53 +41,89 @@ def get_parameter_server():
 
 	return parameter_server
 
-# this thread runs stressor functions that utilize a certain compute resource to change the learner's compute characteristics
-stressor_thread = Thread(target=top_level_stressor)
-stressor_thread.daemon = True
+# ------------------------------------------------------------------------------------------
 
-def assess_parameters(net, num_shards):
+def training_stressor():
 
-	task_description = tasks[task_name]
+	a = torch.randn([100, 100]).to(device)
+	b = torch.randn([100, 100]).to(device)
 
-	x_shards, y_shards = parameter_server.rpcs.get_testing_data.sync_call((task_name, num_shards, ), {})
+	c = a*b
+	b = c*a
+	a = b*c
 
-	x_test = x_shards.reshape([x_shards.shape[0]*x_shards.shape[1]]+task_description['data_shape'])
-	y_test = y_shards.reshape([y_shards.shape[0]*y_shards.shape[1]])
+def download_stressor(ps):
+	ps.rpcs.dummy_download.sync_call((100, 100), {})
 
-	num_test_batches = x_test.shape[0]//BATCH_SIZE
+def upload_stressor(ps):
+	a = torch.randn([100, 100])
+	ps.rpcs.dummy_upload.sync_call((a, ), {})
 
-	loss = 0
-	acc = 0
+def top_level_stressor(ps):
 
-	net = net.to(device)
-	criterion = task_description['loss']
+	# runs a stressor functions once a second based on the state
+	while (True):
+		time.sleep(1)
 
-	for batch_number in range(num_test_batches):
-		x_batch = x_test[BATCH_SIZE*batch_number : BATCH_SIZE*(batch_number+1)].to(device)
-		y_batch = y_test[BATCH_SIZE*batch_number : BATCH_SIZE*(batch_number+1)].to(device)
+		with state_lock:
+			if state == 'idle':
+				# print('pass')
+				# do nothing in idle state
+				pass
 
-		y_hat = net.forward(x_batch)
+			if state == 'training':
+				# print('training_stressor')
+				training_stressor()
 
-		loss += criterion(y_hat, y_batch).item()
-		acc += get_accuracy(y_hat, y_batch).item()
+			if state == 'downloading':
+				# print('download_stressor')
+				download_stressor(ps)
+
+			if state == 'uploading':
+				# print('upload_stressor')
+				upload_stressor(ps)
+
+
+# ------------------------------------------------------------------------------------------
+
+benchmark_scores = {}
+
+@axon.worker.rpc()
+def startup():
+	global benchmark_scores
+
+	parameter_server = get_parameter_server()
+
+	# this thread runs stressor functions that utilize a certain compute resource to change the learner's compute characteristics
+	stressor_thread = Thread(target=top_level_stressor, args=(parameter_server, ))
+	stressor_thread.daemon = True
+	stressor_thread.start()
+
+	# stores benchmarking scores in each state
+	benchmark_scores = {}
+	for task_name, state_name in product(task_names, allowed_states):
+		set_state(state_name)
+		task_state_hash = hash((task_name, state_name))
+		benchmark_scores[task_state_hash] = benchmark(task_name, benchmark_downloads, benchmark_shards)
+
+@axon.worker.rpc()
+def set_state(new_state='idle'):
+	global state
+
+	if new_state in allowed_states: 
+		with state_lock:
+			state = new_state
 	
-	# normalizing the loss and accuracy
-	loss = loss/num_test_batches
-	acc = acc/num_test_batches
-
-	return loss, acc
-
-# calculates the accuracy score of a prediction y_hat and the ground truth y
-I = torch.eye(10,10)
-def get_accuracy(y_hat, y):
-	y_vec = torch.tensor([I[int(i)].tolist() for i in y]).to(device)
-	dot = torch.dot(y_hat.flatten(), y_vec.flatten())
-	return dot/torch.sum(y_hat)
+	else:
+		Raise(BaseException('invalid state setting'))
 
 @axon.worker.rpc()
 def get_price():
-	global price
 	return price
+
+@axon.worker.rpc()
+def get_benchmark_scores():
+	return benchmark_scores
 
 # rpc that runs benchmark
 @axon.worker.rpc()
@@ -188,15 +236,6 @@ def local_update():
 	print('reshaping data')
 	x_train = x_shards.reshape([x_shards.shape[0]*x_shards.shape[1]]+task_description['data_shape'])/255.0
 	y_train = y_shards.reshape([y_shards.shape[0]*y_shards.shape[1]])
-
-	# print(x_train)
-	# print(x_train.mean())
-	# print(x_train[0])
-	# print(x_train[0][0])
-	# print(x_train.shape)
-
-	# print(y_train)
-	# print(y_train.shape)
 	
 	num_batches = x_train.shape[0] // BATCH_SIZE
 

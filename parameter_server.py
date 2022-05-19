@@ -60,6 +60,14 @@ def clear_params(task_name):
 def get_parameters(task_name):
 	return list(model_map[task_name].parameters())
 
+@axon.worker.rpc(executor='Thread')
+def dummy_download(x, y):
+	return torch.randn([x, y])
+
+@axon.worker.rpc(executor='Thread')
+def dummy_upload(input):
+	return input.numel()
+
 @axon.worker.rpc()
 def submit_update(task_name, parameters, num_shards):
 	global update_map

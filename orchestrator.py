@@ -60,14 +60,14 @@ async def main():
 	for ip in learner_ips:
 		learner_handles.append(axon.client.RemoteWorker(ip))
 
-	print('running benchmarks')
-	benchmark_promises = []
-	for task_name in task_names:
-		for l in learner_handles:
-			benchmark_promises.append(l.rpcs.benchmark(task_name, benchmark_downloads, benchmark_shards))
+	print('starting workers')
+	startup_promises = []
+	for l in learner_handles:
+		startup_promises.append(l.rpcs.startup())
 
-	# a list of tuples representing the benchmark scores of each worker
-	benchmark_scores = await asyncio.gather(*benchmark_promises)
+	await asyncio.gather(*startup_promises)
+
+	exit()
 
 	print('benchmark_scores:', benchmark_scores)
 
