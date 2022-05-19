@@ -38,6 +38,7 @@ async def global_update_cycle(learner_handles):
 
 	await asyncio.gather(*aggregate_promises)
 
+async def assess_parameters():
 	testing_promises = []
 	for task_name in task_names:
 		testing_promises.append(parameter_server.rpcs.assess_parameters(task_name, testing_shards))
@@ -123,6 +124,13 @@ async def main():
 	print(allocation)
 	print(association)
 
+	# resets the parameter server from the last training regime
+	clear_promises = []
+	for task_name in task_names:
+		clear_promises.append(parameter_server.rpcs.clear_params(task_name))
+
+	await asyncio.gather(*clear_promises)
+
 	data_set_promises = []
 	for i in range(num_learners):
 		learner = learner_handles[i]
@@ -133,11 +141,14 @@ async def main():
 		print('task_name, num_shards', task_name, num_shards)
 		data_set_promises.append(learner.rpcs.set_training_regime(incoming_task_name=task_name, incomming_num_shards=num_shards))
 
+	data_set_promises.append(assess_parameters())
+
 	# waits for the promises that set the task on each learner to resolve
 	await asyncio.gather(*data_set_promises)
 
 	for i in range(10):
 		await global_update_cycle(learner_handles)
+		await assess_parameters()
 
 if (__name__ == '__main__'):
 	asyncio.run(main())

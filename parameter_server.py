@@ -34,7 +34,7 @@ def get_training_data(task_name, num_shards):
 
 	indices = torch.randint(0, 2, size=[int(num_shards)])
 
-	# it's best to leave the decompression logic to the client
+	# it's best to leave the decompression and scaling logic to the client
 	x_train, y_train = x_train[indices], y_train[indices]
 
 	return x_train, y_train
@@ -46,13 +46,15 @@ def get_testing_data(task_name, num_shards):
 
 	indices = torch.randint(0, 2, size=[int(num_shards)])
 
-	# it's best to leave the decompression logic to the client
+	# it's best to leave the decompression and scaling logic to the client
 	return x_test[indices], y_test[indices]
 
-axon.worker.rpc()
+@axon.worker.rpc()
 def clear_params(task_name):
 	# reinstantiates the parameters of the nueral network for a certain task
 	model_map[task_name] = tasks[task_name]['network_architecture']()
+	# clears the updates for that task
+	update_map[task_name] = []
 
 @axon.worker.rpc(executor='Thread')
 def get_parameters(task_name):
@@ -78,17 +80,23 @@ def aggregate_parameters(task_name):
 	params = [u['parameters'] for u in update_objs]
 	weights = [u['num_shards'] for u in update_objs]
 
-	# normalizing weights
-	w_sum = sum(weights)
-	weights = [w/w_sum for w in weights]
+	# print(f'aggregating for: {task_name}')
 
-	aggregate_parameters = average_parameters(params, weights)
+	# # normalizing weights
+	# w_sum = sum(weights)
+	# weights = [w/w_sum for w in weights]
+
+	# aggregate_parameters = average_parameters(params, weights)
+
+	aggregate_parameters = params[0]
 
 	net = model_map[task_name]
+
 	set_parameters(net, aggregate_parameters)
 
 	# clears the update list
 	update_map[task_name] = []
+
 
 @axon.worker.rpc()
 def assess_parameters(task_name, num_shards):

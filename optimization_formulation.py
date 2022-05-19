@@ -21,7 +21,7 @@ def data_allocation(workers, requesters):
 	num_requesters = len(requesters)
 
 	# the minimum number of shards assigned to each worker
-	delta = 100
+	delta = 1
 
 	# the 2D list holding the binary decision variables representing if worker j has been assigned tasks from requester i
 	x = get_2D_list(num_requesters, num_workers)
@@ -40,9 +40,15 @@ def data_allocation(workers, requesters):
 	# gurobi models update lazily, this executes the addVar statements above
 	m.update()
 
+		# this function represents the time that worker j will take to evaluate the learning task assigned to them from requester i
+	delay = lambda i, j : 2*workers[j].param_time + d[i][j]*workers[j].data_time + requesters[i].num_iters*d[i][j]/workers[j].training_rate
+
 	# the objective is to minimize the total cost of allocation
-	objective_fn = gurobi.quicksum([ workers[j].price * d[i][j] for (i, j) in combinations ])
-	m.setObjective(objective_fn, GRB.MINIMIZE)
+	cost_of_allocation = gurobi.quicksum([ workers[j].price * d[i][j] for (i, j) in combinations ])
+
+	total_delay = gurobi.quicksum([ delay(i, j)**2 for (i, j) in combinations ])
+
+	m.setObjective(total_delay, GRB.MINIMIZE)
 
 	# we now define contraints
 
@@ -56,9 +62,6 @@ def data_allocation(workers, requesters):
 	m.addConstrs(( (x[i][j] == 1) >> (d[i][j] >= 1) for (i, j) in combinations ), 'i2')
 
 	# the last constraints are explicitly stated in the problem formulation
-
-	# this function represents the time that worker j will take to evaluate the learning task assigned to them from requester i
-	delay = lambda i, j : 2*workers[j].param_time + d[i][j]*workers[j].data_time + requesters[i].num_iters*d[i][j]/workers[j].training_rate
 
 	# c1 means the time delay must not exceed the deadline of requester i
 	# m.addConstrs((delay(i, j) <= requesters[i].T for (i, j) in combinations) , 'c1')
