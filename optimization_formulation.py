@@ -1,6 +1,8 @@
 import gurobi
 from itertools import product
 
+from states import state_dicts
+
 # this function manually instantiates an empty 2D list, this can't be done with [None]*5 because of aliasing issues
 def get_2D_list(W, H):
 	l = []
@@ -19,6 +21,7 @@ def data_allocation(workers, requesters):
 
 	num_workers = len(workers)
 	num_requesters = len(requesters)
+	num_states = len(state_dicts)
 
 	# the minimum number of shards assigned to each worker
 	delta = 1
@@ -40,15 +43,30 @@ def data_allocation(workers, requesters):
 	# gurobi models update lazily, this executes the addVar statements above
 	m.update()
 
-		# this function represents the time that worker j will take to evaluate the learning task assigned to them from requester i
-	delay = lambda i, j : 2*workers[j].param_time + d[i][j]*workers[j].data_time + requesters[i].num_iters*d[i][j]/workers[j].training_rate
+	# this function represents the time that worker l will take on the task t with tsh being the task/state hash
+	delay = lambda t, l, tsh : 2*workers[l].param_times[tsh] + d[t][l]*workers[l].data_times[tsh] + requesters[t].num_iters*d[t][l]/workers[l].training_rates[tsh]
 
-	# the objective is to minimize the total cost of allocation
-	cost_of_allocation = gurobi.quicksum([ workers[j].price * d[i][j] for (i, j) in combinations ])
+	# this function represents the expected time that worker j will take to evaluate the learning task assigned to them from requester i
+	def expected_delay(i, j):
+		# expected delay
+		ed = 0
+		state_names = list(state_dicts.keys())
 
-	total_delay = gurobi.quicksum([ delay(i, j)**2 for (i, j) in combinations ])
+		# iterates over states
+		for state_index in range(num_states):
+			tsh = (i, state_index)
+			state_name = state_names[i]
+			ed += state_dicts[state_name]['probability']*delay(i, j, tsh)
 
-	m.setObjective(total_delay, GRB.MINIMIZE)
+		return ed
+
+	#the total cost of allocation
+	# cost_of_allocation = gurobi.quicksum([ workers[j].price * d[i][j] for (i, j) in combinations ])
+
+	# the sum of squares of the expected dalay.
+	expected_delay_MSE = gurobi.quicksum([ expected_delay(i, j)**2 for (i, j) in combinations ])
+
+	m.setObjective(expected_delay_MSE, GRB.MINIMIZE)
 
 	# we now define contraints
 

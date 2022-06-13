@@ -8,7 +8,8 @@ from itertools import product
 
 from config import config
 from tasks import tasks
-from utils import set_parameters
+from states import state_dicts
+from utils import set_parameters, get_parameter_server
 
 # the price this worker charges per data sample
 price = 0.1
@@ -19,45 +20,20 @@ task_names = [task_name for task_name in tasks]
 task_name = config.default_task_name
 num_shards = config.delta
 
-allowed_states = ['idle', 'training', 'downloading', 'uploading']
+allowed_states = [state_name for state_name in state_dicts]
 state_lock = Lock()
-state = 'idle'
+state = allowed_states[0]
 
 # the number of times each learner will download the model while benchmarking
 benchmark_downloads = 5
 # the number of shards each learner will train on while benchmarking
 benchmark_shards = 10
 
-device = 'cpu'
-if torch.cuda.is_available():
-	device = 'cuda:0'
+device = config.training_device
 
-parameter_server = None
-def get_parameter_server():
-	global parameter_server
-
-	if (parameter_server == None):
-		parameter_server = axon.client.RemoteWorker(config.parameter_server_ip)
-
-	return parameter_server
+parameter_server = get_parameter_server()
 
 # ------------------------------------------------------------------------------------------
-
-def training_stressor():
-
-	a = torch.randn([100, 100]).to(device)
-	b = torch.randn([100, 100]).to(device)
-
-	c = a*b
-	b = c*a
-	a = b*c
-
-def download_stressor(ps):
-	ps.rpcs.dummy_download.sync_call((100, 100), {})
-
-def upload_stressor(ps):
-	a = torch.randn([100, 100])
-	ps.rpcs.dummy_upload.sync_call((a, ), {})
 
 def top_level_stressor(ps):
 
@@ -66,22 +42,10 @@ def top_level_stressor(ps):
 		time.sleep(1)
 
 		with state_lock:
-			if state == 'idle':
-				# print('pass')
-				# do nothing in idle state
-				pass
+			stressor_fn = state_dicts[state]['stressor_fn']
+			stressor_params = state_dicts[state]['params']
 
-			if state == 'training':
-				# print('training_stressor')
-				training_stressor()
-
-			if state == 'downloading':
-				# print('download_stressor')
-				download_stressor(ps)
-
-			if state == 'uploading':
-				# print('upload_stressor')
-				upload_stressor(ps)
+		stressor_fn(*stressor_params)
 
 
 # ------------------------------------------------------------------------------------------
@@ -103,7 +67,7 @@ def startup():
 	benchmark_scores = {}
 	for task_name, state_name in product(task_names, allowed_states):
 		set_state(state_name)
-		task_state_hash = hash((task_name, state_name))
+		task_state_hash = (task_names.index(task_name), allowed_states.index(state_name))
 		benchmark_scores[task_state_hash] = benchmark(task_name, benchmark_downloads, benchmark_shards)
 
 @axon.worker.rpc()
@@ -223,8 +187,6 @@ def local_update():
 	# moves neural net to GPU, if one is available
 	net.to(device)
 
-	print('assessing performance, loss and acc:', assess_parameters(net, num_test_shards))
-
 	# creates loss and optimizer objects
 	optimizer = task_description['optimizer'](net)
 	criterion = task_description['loss']
@@ -257,8 +219,6 @@ def local_update():
 		optimizer.zero_grad()
 		loss.backward()
 		optimizer.step()
-
-	print('assessing performance, loss and acc:', assess_parameters(net, num_test_shards))
 
 	# marshalls the neural net's parameters
 	param_update = [p.to('cpu') for p in list(net.parameters())]

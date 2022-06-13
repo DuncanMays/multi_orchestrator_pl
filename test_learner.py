@@ -37,6 +37,9 @@ def test_training_regime():
 		learner.local_update()
 		parameter_server.rpcs.aggregate_parameters.sync_call((task_name, ), {})
 
+def test_startup():
+	print(learner.startup())
+
 def main():
 	# print(' --- test_get_price --- ')
 	# test_get_price()
@@ -47,8 +50,11 @@ def main():
 	# print(' --- test_local_update --- ')
 	# test_local_update()
 
-	print(' --- test_training_regime --- ')
-	test_training_regime()
+	# print(' --- test_training_regime --- ')
+	# test_training_regime()
+
+	print(' --- test_startup --- ')
+	test_startup()
 
 if (__name__ == '__main__'):
 	# asyncio.run(main())

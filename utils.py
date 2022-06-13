@@ -1,3 +1,14 @@
+import axon
+from config import config
+
+parameter_server = None
+def get_parameter_server():
+	global parameter_server
+
+	if (parameter_server == None):
+		parameter_server = axon.client.RemoteWorker(config.parameter_server_ip)
+
+	return parameter_server
 
 # sets the parameters of a neural net
 def set_parameters(net, params):

@@ -67,26 +67,33 @@ async def main():
 
 	await asyncio.gather(*startup_promises)
 
-	exit()
+	benchmark_promises = []
+	for l in learner_handles:
+		# workers cache their benchmark scores, the actual benchmarks are run in the startup function, this function simply queries the cache
+		benchmark_promises.append(l.rpcs.get_benchmark_scores())
 
-	print('benchmark_scores:', benchmark_scores)
+	# benchmark scores is a list of a maps from (task, state) hashes to (training_rate_bps, data_time_spb, param_time_spb) tuples, each index being a learner
+	benchmark_scores = await asyncio.gather(*benchmark_promises)
+
+	# print('benchmark_scores:', benchmark_scores)
 
 	# now allocating data based on benchmark scores
 	# the gurobi script takes input as lists of worker and requester objects
 
 	learner_objs = []
-	for i in range(num_learners):
+	for learner_scores in benchmark_scores:
+		# learner_scores is a map from from (task, state) hashes to (training_rate_bps, data_time_spb, param_time_spb) tuples
 
-		compute_benchmark = benchmark_scores[i][0]
-		data_time = benchmark_scores[i][1]
-		param_time = benchmark_scores[i][2]
+		compute_benchmarks = {task_state_hash: learner_scores[task_state_hash][0] for task_state_hash in learner_scores}
+		data_times = {task_state_hash: learner_scores[task_state_hash][0] for task_state_hash in learner_scores}
+		param_times = {task_state_hash: learner_scores[task_state_hash][0] for task_state_hash in learner_scores}
 
 		learner_obj = SimpleNamespace(**{
 			'price': 0.1,
 			'kappa': 1,
-			'training_rate': compute_benchmark,
-			'data_time': data_time,
-			'param_time': param_time
+			'training_rates': compute_benchmarks,
+			'data_times': data_times,
+			'param_times': param_times
 		})
 
 		learner_objs.append(learner_obj)
