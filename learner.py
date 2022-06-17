@@ -35,7 +35,8 @@ parameter_server = get_parameter_server()
 
 # ------------------------------------------------------------------------------------------
 
-def top_level_stressor(ps):
+def top_level_stressor():
+	print('top level stressor has begun')
 
 	# runs a stressor functions once a second based on the state
 	while (True):
@@ -47,6 +48,10 @@ def top_level_stressor(ps):
 
 		stressor_fn(*stressor_params)
 
+# this thread runs stressor functions that utilize a certain compute resource to change the learner's compute characteristics
+stressor_thread = Thread(target=top_level_stressor)
+stressor_thread.daemon = True
+stressor_thread.start()
 
 # ------------------------------------------------------------------------------------------
 
@@ -55,13 +60,6 @@ benchmark_scores = {}
 @axon.worker.rpc()
 def startup():
 	global benchmark_scores
-
-	parameter_server = get_parameter_server()
-
-	# this thread runs stressor functions that utilize a certain compute resource to change the learner's compute characteristics
-	stressor_thread = Thread(target=top_level_stressor, args=(parameter_server, ))
-	stressor_thread.daemon = True
-	stressor_thread.start()
 
 	# stores benchmarking scores in each state
 	benchmark_scores = {}
@@ -82,17 +80,17 @@ def set_state(new_state='idle'):
 		Raise(BaseException('invalid state setting'))
 
 @axon.worker.rpc()
-def get_price():
-	return price
-
-@axon.worker.rpc()
 def get_benchmark_scores():
 	return benchmark_scores
 
+@axon.worker.rpc()
+def get_price():
+	return price
+
 # rpc that runs benchmark
 @axon.worker.rpc()
-def benchmark(task_name='minst_ffn', num_downloads=1, num_shards=10):
-	print('running benchmark!')
+def benchmark(task_name='minst_ffn', num_downloads=1, num_shards=3):
+	print(f'running benchmark in state: {state}')
 
 	global device
 	task_description = tasks[task_name]
@@ -123,8 +121,7 @@ def benchmark(task_name='minst_ffn', num_downloads=1, num_shards=10):
 	# downloading num_shards data samples
 	print('downloading data')
 	start_time = time.time()
-	call_handle = ps.rpcs.get_training_data.async_call((task_name, num_shards, ), {})
-	x_shards, y_shards = call_handle.join()
+	x_shards, y_shards = ps.rpcs.get_training_data.sync_call((task_name, num_shards, ), {})
 	end_time = time.time()
 
 	data_time_spb = (end_time - start_time)/num_shards
@@ -138,7 +135,7 @@ def benchmark(task_name='minst_ffn', num_downloads=1, num_shards=10):
 	# we now train the network on this random data and time how long it takes
 	start_time = time.time()
 
-	# training the network on random data
+	# training the network on the data we just downloaded
 	for batch_number in tqdm(range(num_batches)):
 		# getting batch
 		x_batch = x_benchmark[batch_number*BATCH_SIZE: (batch_number+1)*BATCH_SIZE].to(device)
@@ -158,6 +155,8 @@ def benchmark(task_name='minst_ffn', num_downloads=1, num_shards=10):
 
 	# calcuating the training rate of the worker in batches per second
 	training_rate_bps = num_shards/(end_time - start_time)
+
+	del x_benchmark, y_benchmark
 
 	return training_rate_bps, data_time_spb, param_time_spb
 
