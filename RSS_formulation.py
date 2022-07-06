@@ -2,6 +2,10 @@ import gurobi
 from itertools import product
 
 from states import state_dicts
+from tasks import tasks
+
+task_names = [name for name in tasks]
+state_names = [name for name in state_dicts]
 
 # this function manually instantiates an empty 2D list, this can't be done with [None]*5 because of aliasing issues
 def get_2D_list(W, H):
@@ -13,7 +17,7 @@ def get_2D_list(W, H):
 		l.append(r)
 	return l
 
-def data_allocation(workers, requesters):
+def run_model(workers, requesters):
 	# ? some sort of configuration object?
 	GRB = gurobi.GRB()
 	# the model
@@ -43,30 +47,16 @@ def data_allocation(workers, requesters):
 	# gurobi models update lazily, this executes the addVar statements above
 	m.update()
 
-	# this function represents the time that worker l will take on the task t with tsh being the task/state hash
-	delay = lambda t, l, tsh : 2*workers[l].param_times[tsh] + d[t][l]*workers[l].data_times[tsh] + requesters[t].num_iters*d[t][l]/workers[l].training_rates[tsh]
-
-	# this function represents the expected time that worker j will take to evaluate the learning task assigned to them from requester i
-	def expected_delay(i, j):
-		# expected delay
-		ed = 0
-		state_names = list(state_dicts.keys())
-
-		# iterates over states
-		for state_index in range(num_states):
-			tsh = (i, state_index)
-			state_name = state_names[i]
-			ed += state_dicts[state_name]['probability']*delay(i, j, tsh)
-
-		return ed
+	# this function represents the time that worker l will take on the task t
+	delay = lambda t, l : 2*workers[l].param_times[t] + d[t][l]*workers[l].data_times[t] + requesters[t].num_iters*d[t][l]/workers[l].training_rates[t]
 
 	#the total cost of allocation
 	# cost_of_allocation = gurobi.quicksum([ workers[j].price * d[i][j] for (i, j) in combinations ])
 
 	# the sum of squares of the expected dalay.
-	expected_delay_MSE = gurobi.quicksum([ expected_delay(i, j)**2 for (i, j) in combinations ])
+	delay_objective = gurobi.quicksum([ delay(i, j) for (i, j) in combinations ])
 
-	m.setObjective(expected_delay_MSE, GRB.MINIMIZE)
+	m.setObjective(delay_objective, GRB.MINIMIZE)
 
 	# we now define contraints
 
@@ -82,7 +72,7 @@ def data_allocation(workers, requesters):
 	# the last constraints are explicitly stated in the problem formulation
 
 	# c1 means the time delay must not exceed the deadline of requester i
-	# m.addConstrs((delay(i, j) <= requesters[i].T for (i, j) in combinations) , 'c1')
+	m.addConstrs((delay(i, j) <= requesters[i].T for (i, j) in combinations) , 'c1')
 
 	# c2 is an energy constraint
 

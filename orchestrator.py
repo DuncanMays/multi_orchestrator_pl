@@ -1,11 +1,12 @@
 import axon
-from config import config
 import asyncio
-from types import SimpleNamespace
-import torch
+import random
 
 from tasks import tasks
-from optimization_formulation import data_allocation
+from states import state_dicts
+from config import config
+from data_allocation import EOL, RSS
+from worker_composite import WorkerComposite
 
 # the number of times each learner will download the model while benchmarking
 benchmark_downloads = 5
@@ -15,40 +16,21 @@ benchmark_shards = 10
 testing_shards = 10
 
 task_names = [task_name for task_name in tasks]
-
+state_names = [state_name for state_name in state_dicts]
 parameter_server = axon.client.RemoteWorker(config.parameter_server_ip)
-
-model_map = {}
-for task_name in tasks:
-	model_map[task_name] = tasks[task_name]['network_architecture']()
-
-async def global_update_cycle(learner_handles):
-
-	# performing local updates
-	update_promises = []
-	for learner in learner_handles:
-		update_promises.append(learner.rpcs.local_update())
-
-	await asyncio.gather(*update_promises)
-
-	# aggregating parameters
-	aggregate_promises = []
-	for task_name in task_names:
-		aggregate_promises.append(parameter_server.rpcs.aggregate_parameters(task_name))
-
-	await asyncio.gather(*aggregate_promises)
-
-async def assess_parameters():
-	testing_promises = []
-	for task_name in task_names:
-		testing_promises.append(parameter_server.rpcs.assess_parameters(task_name, testing_shards))
-
-	acc_and_loss = await asyncio.gather(*testing_promises)
-
-	for i in range(len(task_names)):
-		print(f'the loss and accuracy for {task_names[i]} was: {acc_and_loss[i]}')
+	
+# this coroutine aggregates parameters for a certain task and then assesses their loss and accruacy
+async def aggregate_and_assess(task_name):
+	await parameter_server.rpcs.aggregate_parameters(task_name)
+	return await parameter_server.rpcs.assess_parameters(task_name, testing_shards)
 
 async def main():
+	# resets the parameter server from the last training routine
+	clear_promises = []
+	for task_name in task_names:
+		clear_promises.append(parameter_server.rpcs.clear_params(task_name))
+
+	await asyncio.gather(*clear_promises)
 
 	learner_ips = axon.discovery.get_ips(ip=config.notice_board_ip)
 	num_learners = len(learner_ips)
@@ -60,83 +42,19 @@ async def main():
 	for ip in learner_ips:
 		learner_handles.append(axon.client.RemoteWorker(ip))
 
-	print('starting workers')
-	startup_promises = []
-	for l in learner_handles:
-		startup_promises.append(l.rpcs.startup())
-
-	await asyncio.gather(*startup_promises)
-
-	benchmark_promises = []
-	for l in learner_handles:
-		# workers cache their benchmark scores, the actual benchmarks are run in the startup function, this function simply queries the cache
-		benchmark_promises.append(l.rpcs.get_benchmark_scores())
+	cluster = WorkerComposite(learner_handles)
 
 	# benchmark scores is a list of a maps from (task, state) hashes to (training_rate_bps, data_time_spb, param_time_spb) tuples, each index being a learner
-	benchmark_scores = await asyncio.gather(*benchmark_promises)
+	benchmark_scores = await cluster.rpcs.get_benchmark_scores()
 
 	# print('benchmark_scores:', benchmark_scores)
 
 	# now allocating data based on benchmark scores
-	# the gurobi script takes input as lists of worker and requester objects
-
-	learner_objs = []
-	for learner_scores in benchmark_scores:
-		# learner_scores is a map from from (task, state) hashes to (training_rate_bps, data_time_spb, param_time_spb) tuples
-
-		compute_benchmarks = {task_state_hash: learner_scores[task_state_hash][0] for task_state_hash in learner_scores}
-		data_times = {task_state_hash: learner_scores[task_state_hash][0] for task_state_hash in learner_scores}
-		param_times = {task_state_hash: learner_scores[task_state_hash][0] for task_state_hash in learner_scores}
-
-		learner_obj = SimpleNamespace(**{
-			'price': 0.1,
-			'kappa': 1,
-			'training_rates': compute_benchmarks,
-			'data_times': data_times,
-			'param_times': param_times
-		})
-
-		learner_objs.append(learner_obj)
-
-	task_objs = []
-	for task_name in tasks:
-
-		task = tasks[task_name]
-
-		# number of learning iterations, training deadline, data floor, budget
-		task_obj = SimpleNamespace(**{
-			'num_iters': task['num_training_iters'] ,
-			'deadline': task['deadline'],
-			'dataset_size': task['dataset_size'],
-			'budget': task['budget']
-		})
-
-		task_objs.append(task_obj)
-
-	print('performing optimization calculation')
-	# returns the learner/orchestrator association as a one-hot matrix, and the data allocated to each learner as a matrix as well
-	# the first index iterates accross requesters, the second accross workers
-	x, d = data_allocation(learner_objs, task_objs)
-
-	# a tensor that holds true on index pairs of workers and requesters who are associated with one another
-	x = torch.tensor(x) == 1.0
-
-	task_indices = x.nonzero()[:, 0].tolist()
-
-	association = [task_names[i] for i in task_indices]
-
-	# the amount of data allocated to each learner
-	allocation = torch.tensor(d).sum(dim=0).tolist()
+	association, allocation = EOL(benchmark_scores)
+	# association, allocation = RSS(benchmark_scores)
 
 	print(allocation)
 	print(association)
-
-	# resets the parameter server from the last training regime
-	clear_promises = []
-	for task_name in task_names:
-		clear_promises.append(parameter_server.rpcs.clear_params(task_name))
-
-	await asyncio.gather(*clear_promises)
 
 	data_set_promises = []
 	for i in range(num_learners):
@@ -148,14 +66,37 @@ async def main():
 		print('task_name, num_shards', task_name, num_shards)
 		data_set_promises.append(learner.rpcs.set_training_regime(incoming_task_name=task_name, incomming_num_shards=num_shards))
 
-	data_set_promises.append(assess_parameters())
-
 	# waits for the promises that set the task on each learner to resolve
 	await asyncio.gather(*data_set_promises)
 
-	for i in range(10):
-		await global_update_cycle(learner_handles)
-		await assess_parameters()
+	# assessing parameters for each task prior to training
+	acc_and_loss_pending = []
+	for task_name in task_names:
+		acc_and_loss_pending.append(parameter_server.rpcs.assess_parameters(task_name, testing_shards))
+
+	acc_and_loss = await asyncio.gather(*acc_and_loss_pending)
+
+	for i in range(len(task_names)):
+		print(f'the loss and accuracy for {task_names[i]} was: {acc_and_loss[i]}')
+
+	# performs local updates
+	for i in range(100):
+
+		# randomly sets the state in each of the workers
+		new_states = [(random.choice(state_names), ) for _ in range(num_learners)]
+		await cluster.rpcs.set_state(new_states)
+
+		await cluster.rpcs.local_update()
+		
+		# aggregating and then assessing parameters for each task on the parameter server
+		acc_and_loss_pending = []
+		for task_name in task_names:
+			acc_and_loss_pending.append(aggregate_and_assess(task_name))
+
+		acc_and_loss = await asyncio.gather(*acc_and_loss_pending)
+
+		for i in range(len(task_names)):
+			print(f'the loss and accuracy for {task_names[i]} was: {acc_and_loss[i]}')
 
 if (__name__ == '__main__'):
 	asyncio.run(main())

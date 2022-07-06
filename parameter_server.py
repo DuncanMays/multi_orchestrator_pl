@@ -96,6 +96,10 @@ def aggregate_parameters(task_name):
 
 	# aggregate_parameters = average_parameters(params, weights)
 
+	# if there haven't been any updates, this will prevent the call crashing
+	if (len(params) == 0):
+		return
+
 	aggregate_parameters = params[0]
 
 	net = model_map[task_name]
