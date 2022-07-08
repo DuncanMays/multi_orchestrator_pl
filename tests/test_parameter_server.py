@@ -1,3 +1,6 @@
+import sys
+
+sys.path.append('..')
 import parameter_server
 from tasks import tasks
 

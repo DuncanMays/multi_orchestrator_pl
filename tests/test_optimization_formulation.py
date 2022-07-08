@@ -1,4 +1,7 @@
 from types import SimpleNamespace
+import sys
+
+sys.path.append('..')
 
 from optimization_formulation import data_allocation
 from tasks import tasks

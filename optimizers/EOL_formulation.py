@@ -56,10 +56,10 @@ def run_model(workers, requesters):
 		ed = 0
 		state_names = list(state_dicts.keys())
 
-		# iterates over states
+		# iterates over states, summing their delay multiplied by their probability
 		for state_index in range(num_states):
-			tsh = (task_names[i], state_names[state_index])
-			state_name = state_names[i]
+			state_name = state_names[state_index]
+			tsh = (task_names[i], state_name)
 			ed += state_dicts[state_name]['probability']*delay(i, j, tsh)
 
 		return ed
@@ -69,6 +69,9 @@ def run_model(workers, requesters):
 
 	# the sum of squares of the expected dalay.
 	EOL_objective = gurobi.quicksum([ expected_delay(i, j) for (i, j) in combinations ])
+
+	# the maximal expected delay
+	MMET_objective = gurobi.quicksum([ gurobi.quicksum([ expected_delay(i, j) for j in range(num_workers) ]) for i in range(num_requesters)])
 
 	m.setObjective(EOL_objective, GRB.MINIMIZE)
 
@@ -86,7 +89,7 @@ def run_model(workers, requesters):
 	# the last constraints are explicitly stated in the problem formulation
 
 	# c1 means the time delay must not exceed the deadline of requester i
-	m.addConstrs((delay(i, j, (task_names[i], state_names[j])) <= requesters[i].T for (i, j) in combinations) , 'c1')
+	m.addConstrs((expected_delay(i, j) <= requesters[i].T for (i, j) in combinations) , 'c1')
 
 	# c2 is an energy constraint
 

@@ -30,7 +30,7 @@ def gather_wrapper(child_coros):
 			param_list = [() for i in child_coros]
 
 		elif (num_children != len(param_list)):
-			Raise(BaseException('given coroutine list and parameter list not the same length'))
+			raise BaseException('given coroutine list and parameter list not the same length')
 
 		tasks = []
 		for i in range(num_children):
@@ -43,6 +43,8 @@ def gather_wrapper(child_coros):
 
 	return gathered_coroutine
 
+# this class accepts a list of axon.client.RemoteWorker objects and returns an object with all the RPCs that are common between those worker handles
+# RPCs on all workers can then be called with a single function call on an instance of this class, making cluster management much smoother and easier
 class WorkerComposite():
 
 	def __init__(self, children):
@@ -62,7 +64,7 @@ class WorkerComposite():
 		for RPC_name in self_RPC_names:
 			# the coroutines that call RPCs called RPC_name on each worker independantly
 			child_RPC_stubs = [getattr(child.rpcs, RPC_name) for child in self.children]
-			# gather_wrapper wraps the RPC stubs with and asyncio.gather call, which allows them to execute concurrently
+			# gather_wrapper wraps the RPC stubs with an asyncio.gather call, which allows them to execute concurrently
 			rpcs[RPC_name] = gather_wrapper(child_RPC_stubs)
 
 		self.rpcs = SimpleNamespace(**rpcs)

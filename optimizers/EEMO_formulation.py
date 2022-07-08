@@ -23,6 +23,9 @@ def run_model(workers, requesters):
 	# the model
 	m = gurobi.Model('multi-requester setup')
 
+	m.params.NonConvex = 2
+	m.setParam('NonConvex', 2)
+
 	num_workers = len(workers)
 	num_requesters = len(requesters)
 	num_states = len(state_dicts)
@@ -44,23 +47,23 @@ def run_model(workers, requesters):
 		# data allocation
 		d[i][j] = m.addVar(vtype=GRB.INTEGER, name="d"+str((i, j)))
 
+	# the number of learning iterations each worker is to perform
+	num_iters = [m.addVar(vtype=GRB.INTEGER, name="i"+str(i)) for i in range(num_requesters)]
+
 	# gurobi models update lazily, this executes the addVar statements above
 	m.update()
 
 	# this function represents the time that worker l will take on the task t
-	delay = lambda t, l : 2*workers[l].param_times[t] + d[t][l]*workers[l].data_times[t] + requesters[t].num_iters*d[t][l]/workers[l].training_rates[t]
+	delay = lambda t, l : 2*workers[l].param_times[t] + d[t][l]*workers[l].data_times[t] + num_iters[t]*d[t][l]/workers[l].training_rates[t]
 
-	#the total cost of allocation
-	# cost_of_allocation = gurobi.quicksum([ workers[j].price * d[i][j] for (i, j) in combinations ])
+	# This represents the objective of optimization, to maximize the number of iterations each learner performs in the time available
+	learning_objective = gurobi.quicksum([ t for t in num_iters ])
 
-	# the sum of squares of the expected dalay.
-	delay_objective = gurobi.quicksum([ delay(i, j) for (i, j) in combinations ])
-
-	m.setObjective(delay_objective, GRB.MINIMIZE)
+	m.setObjective(learning_objective, GRB.MAXIMIZE)
 
 	# we now define contraints
 
-	# the first constraints i0 to i2, are implicit in the system model
+	# the first constraints i0 to i3, are implicit in the system model
 
 	# that data allocation must be positive
 	m.addConstrs(( d[i][j] >= 0 for (i, j) in combinations ), 'i0')
@@ -68,11 +71,13 @@ def run_model(workers, requesters):
 	m.addConstrs(( (x[i][j] == 0) >> (d[i][j] == 0) for (i, j) in combinations ), 'i1')
 	# x being one means d is greater than zero
 	m.addConstrs(( (x[i][j] == 1) >> (d[i][j] >= 1) for (i, j) in combinations ), 'i2')
+	# that the number of training iterations must be greater than or equal to one
+	m.addConstrs(( num_iters[i] >= 1 for i in range(num_requesters) ), 'i3')
 
 	# the last constraints are explicitly stated in the problem formulation
 
 	# c1 means the time delay must not exceed the deadline of requester i
-	m.addConstrs((delay(i, j) <= requesters[i].T for (i, j) in combinations) , 'c1')
+	m.addConstrs((delay(i, j) <= requesters[i].deadline for (i, j) in combinations) , 'c1')
 
 	# c2 is an energy constraint
 
@@ -92,6 +97,9 @@ def run_model(workers, requesters):
 
 	m.optimize()
 
+	# this is the number of iterations that should be performed for each task
+	iterations = [int(e.X) for e in num_iters]
+
 	association = get_2D_list(num_requesters, num_workers)
 	allocation = get_2D_list(num_requesters, num_workers)
 
@@ -104,4 +112,4 @@ def run_model(workers, requesters):
 		association[i][j] = x[i][j].X
 		allocation[i][j] = d[i][j].X
 
-	return association, allocation
+	return association, allocation, iterations

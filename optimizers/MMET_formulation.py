@@ -34,6 +34,8 @@ def run_model(workers, requesters):
 	x = get_2D_list(num_requesters, num_workers)
 	# the 2D list holding the integers representing the amount of data assigned from requester i to worker j
 	d = get_2D_list(num_requesters, num_workers)
+	# the 1D list holding the ceiling for each task
+	c = []
 
 	# the enumeration of indices of workers and requesters
 	combinations = list(product(range(num_requesters), range(num_workers)))
@@ -43,20 +45,35 @@ def run_model(workers, requesters):
 		x[i][j] = m.addVar(vtype=GRB.BINARY, name="x"+str((i, j)))
 		# data allocation
 		d[i][j] = m.addVar(vtype=GRB.INTEGER, name="d"+str((i, j)))
+		
+		if (j == 0):
+			# the ceiling
+			c.append(m.addVar(vtype=GRB.INTEGER, name="c"+str(i)))
 
 	# gurobi models update lazily, this executes the addVar statements above
 	m.update()
 
-	# this function represents the time that worker l will take on the task t
-	delay = lambda t, l : 2*workers[l].param_times[t] + d[t][l]*workers[l].data_times[t] + requesters[t].num_iters*d[t][l]/workers[l].training_rates[t]
+	# this function represents the time that worker l will take on the task t with tsh being the task/state hash
+	delay = lambda t, l, tsh : 2*workers[l].param_times[tsh] + d[t][l]*workers[l].data_times[tsh] + requesters[t].num_iters*d[t][l]/workers[l].training_rates[tsh]
 
-	#the total cost of allocation
-	# cost_of_allocation = gurobi.quicksum([ workers[j].price * d[i][j] for (i, j) in combinations ])
+	# this function represents the expected time that worker j will take to evaluate the learning task assigned to them from requester i
+	def expected_delay(i, j):
+		# expected delay
+		ed = 0
+		state_names = list(state_dicts.keys())
 
-	# the sum of squares of the expected dalay.
-	delay_objective = gurobi.quicksum([ delay(i, j) for (i, j) in combinations ])
+		# iterates over states, summing their delay multiplied by their probability
+		for state_index in range(num_states):
+			state_name = state_names[state_index]
+			tsh = (task_names[i], state_name)
+			ed += state_dicts[state_name]['probability']*delay(i, j, tsh)
 
-	m.setObjective(delay_objective, GRB.MINIMIZE)
+		return ed
+
+	# minimize the sum of the ceiling variable for each task
+	MMET_objective = gurobi.quicksum([ c[i] for i in range(num_requesters) ])
+
+	m.setObjective(MMET_objective, GRB.MINIMIZE)
 
 	# we now define contraints
 
@@ -72,7 +89,8 @@ def run_model(workers, requesters):
 	# the last constraints are explicitly stated in the problem formulation
 
 	# c1 means the time delay must not exceed the deadline of requester i
-	m.addConstrs((delay(i, j) <= requesters[i].T for (i, j) in combinations) , 'c1')
+	m.addConstrs((expected_delay(i, j) <= c[i] for (i, j) in combinations) , 'c1')
+	m.addConstrs((c[i] <= requesters[i].T for i in range(num_requesters)) , 'c1*')
 
 	# c2 is an energy constraint
 
@@ -82,7 +100,7 @@ def run_model(workers, requesters):
 	# c4 means that the total cost of assignment for a requester may not exceed their budget
 	m.addConstrs((sum([ workers[j].price*d[i][j] for j in range(num_workers) ]) <= requesters[i].budget for i in range(num_requesters)), 'c4')
 
-	# # c5 means that the a worker may only recieve data shards from one requester
+	# c5 means that the a worker may only recieve data shards from one requester
 	m.addConstrs(( gurobi.quicksum([ x[i][j] for i in range(num_requesters) ] ) <= 1 for j in range(num_workers)), 'c5')
 
 	# # c6 means that the amount of data shards assigned to a worker must be greater than delta

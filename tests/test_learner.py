@@ -1,6 +1,9 @@
 import asyncio
 import torch
 import axon
+import sys
+
+sys.path.append('..')
 
 import learner
 from tasks import tasks
@@ -41,8 +44,8 @@ def test_startup():
 	print(learner.startup())
 
 def main():
-	# print(' --- test_get_price --- ')
-	# test_get_price()
+	print(' --- test_get_price --- ')
+	test_get_price()
 
 	# print(' --- test_benchmark --- ')
 	# test_benchmark()
@@ -53,8 +56,8 @@ def main():
 	# print(' --- test_training_regime --- ')
 	# test_training_regime()
 
-	print(' --- test_startup --- ')
-	test_startup()
+	# print(' --- test_startup --- ')
+	# test_startup()
 
 if (__name__ == '__main__'):
 	# asyncio.run(main())

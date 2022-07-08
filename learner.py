@@ -4,6 +4,9 @@ import time
 import torch
 import pickle
 import random
+import sys
+
+sys.path.append('..')
 
 from tqdm import tqdm
 from threading import Thread, Lock
@@ -23,13 +26,11 @@ state_names = [state_name for state_name in state_dicts]
 task_names = [task_name for task_name in tasks]
 task_name = config.default_task_name
 num_shards = config.delta
+num_iters = 1
 device = config.training_device
 
-# reads this learner's benchmark scores from disk
+# holds the learner's benchmark scores once they're read from disk
 benchmark_scores = {}
-with open(dst_file, 'rb') as f:
-	buffer = f.read()
-	benchmark_scores = pickle.loads(buffer)
 
 # makes set_state an RPC so the orchestrator can set the state of this worker
 axon.worker.rpc()(set_state)
@@ -50,16 +51,17 @@ def get_price():
 	return price
 
 @axon.worker.rpc()
-def set_training_regime(incoming_task_name=config.default_task_name, incomming_num_shards=config.delta):
-	global task_name, num_shards
+def set_training_regime(incoming_task_name=config.default_task_name, incomming_num_shards=config.delta, incomming_num_iters=1):
+	global task_name, num_shards, num_iters
 	task_name = incoming_task_name
 	num_shards = incomming_num_shards
+	num_iters = incomming_num_iters
 
 @axon.worker.rpc()
 def local_update():
 	print('performing local update routine')
 
-	global device, task_name, num_shards, state
+	global device, task_name, num_shards, num_iters, state
 
 	task_description = tasks[task_name]
 	ps = get_parameter_server()
@@ -93,20 +95,22 @@ def local_update():
 
 	# training the network on random data
 	print('training')
-	for batch_number in tqdm(range(num_batches)):
-		# getting batch
-		x_batch = x_train[batch_number*BATCH_SIZE: (batch_number+1)*BATCH_SIZE].to(device)
-		y_batch = y_train[batch_number*BATCH_SIZE: (batch_number+1)*BATCH_SIZE].to(device)
+	for i in range(num_iters):
+		print(f'iteration {i+1} of {num_iters}')
+		for batch_number in tqdm(range(num_batches)):
+			# getting batch
+			x_batch = x_train[batch_number*BATCH_SIZE: (batch_number+1)*BATCH_SIZE].to(device)
+			y_batch = y_train[batch_number*BATCH_SIZE: (batch_number+1)*BATCH_SIZE].to(device)
 
-		# getting network's loss on batch
-		y_hat = net(x_batch)
+			# getting network's loss on batch
+			y_hat = net(x_batch)
 
-		loss = criterion(y_hat, y_batch)
+			loss = criterion(y_hat, y_batch)
 
-		# updating parameters
-		loss.backward()
-		optimizer.step()
-		optimizer.zero_grad()
+			# updating parameters
+			loss.backward()
+			optimizer.step()
+			optimizer.zero_grad()
 
 	# marshalls the neural net's parameters
 	param_update = [p.to('cpu') for p in list(net.parameters())]
@@ -125,6 +129,11 @@ if (__name__ == '__main__'):
 
 	# registers sign out on sigint
 	signal.signal(signal.SIGINT, shutdown_handler)
+
+	# reads benchmark scores from disk
+	with open(dst_file, 'rb') as f:
+		buffer = f.read()
+		benchmark_scores = pickle.loads(buffer)
 
 	# starts stressor thread, this runs stressors that put the worker in different states
 	stressor_thread.start()

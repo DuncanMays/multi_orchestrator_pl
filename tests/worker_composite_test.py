@@ -1,3 +1,7 @@
+import sys
+
+sys.path.append('..')
+
 from worker_composite import gather_wrapper, WorkerComposite
 import asyncio
 from random import randint
@@ -28,7 +32,7 @@ async def test_WorkerComposite():
 	worker_thread.start()
 
 	# we now create multiple worker handles and gather them into a composite class 
-	await asyncio.sleep(0.1)
+	await asyncio.sleep(0.2)
 
 	num_workers = 5
 	wrkr_handles = [axon.client.RemoteWorker('localhost') for i in range(num_workers)]

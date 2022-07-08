@@ -88,19 +88,17 @@ def aggregate_parameters(task_name):
 	params = [u['parameters'] for u in update_objs]
 	weights = [u['num_shards'] for u in update_objs]
 
-	# print(f'aggregating for: {task_name}')
+	print(f'aggregating for: {task_name}')
 
-	# # normalizing weights
-	# w_sum = sum(weights)
-	# weights = [w/w_sum for w in weights]
-
-	# aggregate_parameters = average_parameters(params, weights)
-
-	# if there haven't been any updates, this will prevent the call crashing
+	# if there haven't been any updates, this will leave the model parameters as they are and prevent the call crashing
 	if (len(params) == 0):
 		return
 
-	aggregate_parameters = params[0]
+	# normalizing weights
+	w_sum = sum(weights)
+	weights = [w/w_sum for w in weights]
+
+	aggregate_parameters = average_parameters(params, weights)
 
 	net = model_map[task_name]
 
