@@ -4,7 +4,9 @@
 
 import axon
 import asyncio
+import sys
 
+sys.path.append('..')
 from states import state_dicts
 
 target_ip = '192.168.2.210'

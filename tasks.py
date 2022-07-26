@@ -6,7 +6,7 @@ tasks = {
 		'num_training_iters': 2,
 		'deadline': 30,
 		'budget': 150_000,
-		'network_architecture': networks.FourNN,
+		'network_architecture': networks.ThreeNN,
 		'dataset_name': 'MNIST_flat',
 		'dataset_size': 20_000 // 500,
 		'data_shape': [784],

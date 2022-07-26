@@ -3,11 +3,11 @@ from keras.datasets import mnist
 import torch
 import json
 
-print('importing data')
+# print('importing data')
 
 raw_data = mnist.load_data()
 
-print('preprocessing')
+# print('preprocessing')
 
 shard_size = 500
 

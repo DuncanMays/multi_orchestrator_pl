@@ -48,7 +48,15 @@ def run_model(workers, requesters):
 	m.update()
 
 	# this function represents the time that worker l will take on the task t with tsh being the task/state hash
-	delay = lambda t, l, tsh : 2*workers[l].param_times[tsh] + d[t][l]*workers[l].data_times[tsh] + requesters[t].num_iters*d[t][l]/workers[l].training_rates[tsh]
+	delay = lambda t, l, tsh : x[t][l]*(2*workers[l].param_times[tsh] + d[t][l]*workers[l].data_times[tsh] + requesters[t].num_iters*d[t][l]/workers[l].training_rates[tsh])
+
+	# # this function returns the delay of assigning d date shards to worker w from task t in state s
+	# # d is an integer representing the number of shards, w, t, and s are indexes representing the worker, task and state
+	# def delay(d, w, t, s):
+	# 	tsh = (task_names[t], state_names[s])
+	# 	wrkr = workers[w]
+	# 	req = requesters[t]
+	# 	state = state_dicts[state_names[s]]
 
 	# this function represents the expected time that worker j will take to evaluate the learning task assigned to them from requester i
 	def expected_delay(i, j):
@@ -64,14 +72,26 @@ def run_model(workers, requesters):
 
 		return ed
 
-	#the total cost of allocation
-	# cost_of_allocation = gurobi.quicksum([ workers[j].price * d[i][j] for (i, j) in combinations ])
+	# this function represents the expected opportunity loss of the data allocated from task i to worker j
+	def expected_opportunity_loss(i, j):
 
-	# the sum of squares of the expected dalay.
-	EOL_objective = gurobi.quicksum([ expected_delay(i, j) for (i, j) in combinations ])
+		eol = 0
+		state_names = list(state_dicts.keys())
 
-	# the maximal expected delay
-	MMET_objective = gurobi.quicksum([ gurobi.quicksum([ expected_delay(i, j) for j in range(num_workers) ]) for i in range(num_requesters)])
+		# iterates over states, summing their delay multiplied by their probability
+		for state_index in range(num_states):
+			state_name = state_names[state_index]
+			tsh = (task_names[i], state_name)
+			state_prob = state_dicts[state_name]['probability']
+
+			eol += state_prob*(delay(i, j, tsh) - min([delay(i, j_prime, tsh) for j_prime in range(num_workers)]))
+
+		return eol
+
+	# the sum of the expected dalay.
+	ED_objective = gurobi.quicksum([ expected_delay(i, j) for (i, j) in combinations ])
+
+	EOL_objective = gurobi.quicksum([ expected_opportunity_loss(i, j) for (i, j) in combinations ])
 
 	m.setObjective(EOL_objective, GRB.MINIMIZE)
 

@@ -1,12 +1,16 @@
 import axon
 import asyncio
 import random
+import json
+import time
+from os.path import join as path_join
 
 from tasks import tasks
 from states import state_dicts
 from config import config
-from data_allocation import EOL, MMET, RSS, EEMO
+from optimizers.data_allocation import EOL, MMET, RSS, EEMO
 from worker_composite import WorkerComposite
+from utils import get_parameter_server
 
 # the number of times each learner will download the model while benchmarking
 benchmark_downloads = 5
@@ -17,7 +21,29 @@ testing_shards = 10
 
 task_names = [task_name for task_name in tasks]
 state_names = [state_name for state_name in state_dicts]
-parameter_server = axon.client.RemoteWorker(config.parameter_server_ip)
+parameter_server = get_parameter_server()
+
+# this is where results will be recorded
+result_folder = './results/testing_1'
+result_file = 'test_0.json'
+result_file_path = path_join(result_folder, result_file)
+
+# this is the dict where results will be recorded for each training run
+# each task_name corresponds to a list of data points, each data point representing a global update cycle
+# each data point holds: the time that the cycle took, and the loss and acc
+results = {task_name: [] for task_name in task_names}
+
+def record_results(file_path):
+	try:
+		with open(file_path, 'w') as f:
+			json_str = json.dumps(results)
+			f.write(json_str)
+
+	except(FileNotFoundError):
+		print(f'file not found at {file_path}, recording data in backup.json')
+		with open('./baackup.json', 'w') as f:
+			json_str = json.dumps(results)
+			f.write(json_str)		
 
 async def training_routine(task_name, cluster_handle, num_training_cycles):
 
@@ -25,10 +51,16 @@ async def training_routine(task_name, cluster_handle, num_training_cycles):
 	num_learners_on_task = len(cluster_handle.children)
 
 	# assessing the accuracy and loss before training
-	acc_and_loss = await parameter_server.rpcs.assess_parameters(task_name, testing_shards)
-	print(f'the loss and accuracy for {task_name} was: {acc_and_loss} prior to training')
+	loss, acc  = await parameter_server.rpcs.assess_parameters(task_name, testing_shards)
+	print(f'the loss and accuracy for {task_name} was: {acc, loss} prior to training')
+
+	data_point = {'time': 0, 'acc': acc, 'loss': loss}
+	results[task_name].append(data_point)
 
 	for i in range(num_training_cycles):
+		# recording the start of the training cycle
+		start_time = time.time()
+
 		# randomly sets the state in each of the workers
 		new_states = [(random.choice(state_names), ) for _ in range(num_learners_on_task)]
 		await cluster_handle.rpcs.set_state(new_states)
@@ -39,9 +71,16 @@ async def training_routine(task_name, cluster_handle, num_training_cycles):
 		# aggregating parameters
 		await parameter_server.rpcs.aggregate_parameters(task_name)
 
+		# recording the finish time of the training cycle
+		end_time = time.time()
+
 		# assessing parameters
-		acc_and_loss = await parameter_server.rpcs.assess_parameters(task_name, testing_shards)
-		print(f'cycle completed on {task_name}, loss and accuracy: {acc_and_loss}')
+		loss, acc = await parameter_server.rpcs.assess_parameters(task_name, testing_shards)
+		print(f'cycle completed on {task_name}, loss and accuracy: {loss, acc}')
+
+		# recording results
+		data_point = {'time': end_time - start_time, 'acc': acc, 'loss': loss}
+		results[task_name].append(data_point)
 
 async def main():
 	# resets the parameter server from the last training run
@@ -70,8 +109,8 @@ async def main():
 	# print('benchmark_scores:', benchmark_scores)
 
 	# now allocating data based on benchmark scores
-	association, allocation, iterations = EOL(benchmark_scores)
-	# association, allocation, iterations = MMET(benchmark_scores)
+	# association, allocation, iterations = EOL(benchmark_scores)
+	association, allocation, iterations = MMET(benchmark_scores)
 	# association, allocation, iterations = RSS(benchmark_scores)
 	# association, allocation, iterations = EEMO(benchmark_scores)
 
@@ -97,10 +136,13 @@ async def main():
 
 	training_promises = []
 	for task_name in task_clusters:
-		training_promises.append(training_routine(task_name, task_clusters[task_name], 10))
+		training_promises.append(training_routine(task_name, task_clusters[task_name], 5))
 
 	# deploys training routines in parallel
 	await asyncio.gather(*training_promises)
+
+	# records results to a file
+	record_results(result_file_path)
 
 if (__name__ == '__main__'):
 	asyncio.run(main())

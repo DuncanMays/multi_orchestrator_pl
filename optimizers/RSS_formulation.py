@@ -48,7 +48,7 @@ def run_model(workers, requesters):
 	m.update()
 
 	# this function represents the time that worker l will take on the task t
-	delay = lambda t, l : 2*workers[l].param_times[t] + d[t][l]*workers[l].data_times[t] + requesters[t].num_iters*d[t][l]/workers[l].training_rates[t]
+	delay = lambda t, l : x[t][l]*(2*workers[l].param_times[t] + d[t][l]*workers[l].data_times[t] + requesters[t].num_iters*d[t][l]/workers[l].training_rates[t])
 
 	delay_objective = gurobi.quicksum([ delay(i, j) for (i, j) in combinations ])
 

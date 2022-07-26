@@ -1,7 +1,7 @@
 import axon
 import torch
 
-from MNIST_data import img_x_train, flat_x_train, y_train, img_x_test, flat_x_test, y_test
+from data.MNIST_data import img_x_train, flat_x_train, y_train, img_x_test, flat_x_test, y_test
 from tasks import tasks
 from utils import set_parameters, average_parameters
 

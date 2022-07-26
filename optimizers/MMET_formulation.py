@@ -54,7 +54,7 @@ def run_model(workers, requesters):
 	m.update()
 
 	# this function represents the time that worker l will take on the task t with tsh being the task/state hash
-	delay = lambda t, l, tsh : 2*workers[l].param_times[tsh] + d[t][l]*workers[l].data_times[tsh] + requesters[t].num_iters*d[t][l]/workers[l].training_rates[tsh]
+	delay = lambda t, l, tsh : x[t][l]*(2*workers[l].param_times[tsh] + d[t][l]*workers[l].data_times[tsh] + requesters[t].num_iters*d[t][l]/workers[l].training_rates[tsh])
 
 	# this function represents the expected time that worker j will take to evaluate the learning task assigned to them from requester i
 	def expected_delay(i, j):
