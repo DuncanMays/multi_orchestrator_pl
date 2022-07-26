@@ -8,7 +8,7 @@ from os.path import join as path_join
 from tasks import tasks
 from states import state_dicts
 from config import config
-from optimizers.data_allocation import EOL, MMET, RSS, EEMO
+from data_allocation import EOL, MMET, RSS, EEMO
 from worker_composite import WorkerComposite
 from utils import get_parameter_server
 
@@ -21,6 +21,7 @@ testing_shards = 10
 
 task_names = [task_name for task_name in tasks]
 state_names = [state_name for state_name in state_dicts]
+state_distribution = [state_dicts[state_name]['probability'] for state_name in state_dicts]
 parameter_server = get_parameter_server()
 
 # this is where results will be recorded
@@ -61,8 +62,10 @@ async def training_routine(task_name, cluster_handle, num_training_cycles):
 		# recording the start of the training cycle
 		start_time = time.time()
 
-		# randomly sets the state in each of the workers
-		new_states = [(random.choice(state_names), ) for _ in range(num_learners_on_task)]
+		# randomly sets the state in each of the workers, according to state_distribution
+		new_states = random.choices(state_names, weights=state_distribution, k=num_learners_on_task)
+		new_states = [(s, ) for s in new_states]
+		print(new_states)
 		await cluster_handle.rpcs.set_state(new_states)
 
 		# performs the local training routine on each worker on the task
@@ -109,8 +112,8 @@ async def main():
 	# print('benchmark_scores:', benchmark_scores)
 
 	# now allocating data based on benchmark scores
-	# association, allocation, iterations = EOL(benchmark_scores)
-	association, allocation, iterations = MMET(benchmark_scores)
+	association, allocation, iterations = EOL(benchmark_scores)
+	# association, allocation, iterations = MMET(benchmark_scores)
 	# association, allocation, iterations = RSS(benchmark_scores)
 	# association, allocation, iterations = EEMO(benchmark_scores)
 
@@ -142,7 +145,7 @@ async def main():
 	await asyncio.gather(*training_promises)
 
 	# records results to a file
-	record_results(result_file_path)
+	# record_results(result_file_path)
 
 if (__name__ == '__main__'):
 	asyncio.run(main())

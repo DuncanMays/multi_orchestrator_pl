@@ -8,6 +8,7 @@ import sys
 
 sys.path.append('..')
 from states import state_dicts
+from tasks import tasks
 
 target_ip = '192.168.2.210'
 
@@ -15,22 +16,21 @@ async def main():
 
 	wrkr_handle = axon.client.RemoteWorker(target_ip)
 
-	# runs benchmarks in worker
-	await wrkr_handle.rpcs.startup()
-
 	benchmark_scores = await wrkr_handle.rpcs.get_benchmark_scores()
 
 	# the benchmark scores are unique to a (task, state) pair, the task is irrelavant for our purposes here but we need to pick one
-	task_index = 0
 	state_names = list(state_dicts.keys())
+	task_names = list(tasks.keys())
+
+	# we only need to see the scores for one task
+	task_name = task_names[0]
 
 	print('      | training rate bps | data time spb | param_time spb')
 
 	# iterating over states
-	for i in range(len(state_dicts)):
-		ts = (task_index, i)
-
-		print(state_names[i], ':', benchmark_scores[ts])
+	for state_name in state_names:
+		ts_key = (task_name, state_name)
+		print(state_name, ':', benchmark_scores[ts_key])
 
 if (__name__ == '__main__'):
 	asyncio.run(main())

@@ -91,9 +91,9 @@ def run_model(workers, requesters):
 	# the sum of the expected dalay.
 	ED_objective = gurobi.quicksum([ expected_delay(i, j) for (i, j) in combinations ])
 
-	EOL_objective = gurobi.quicksum([ expected_opportunity_loss(i, j) for (i, j) in combinations ])
+	# EOL_objective = gurobi.quicksum([ expected_opportunity_loss(i, j) for (i, j) in combinations ])
 
-	m.setObjective(EOL_objective, GRB.MINIMIZE)
+	m.setObjective(ED_objective, GRB.MINIMIZE)
 
 	# we now define contraints
 

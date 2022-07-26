@@ -16,7 +16,7 @@ tasks = {
 
 	'mnist_cnn': {
 		'num_training_iters': 1,
-		'deadline': 20,
+		'deadline': 30,
 		'budget': 100_000,
 		'network_architecture': networks.ConvNet,
 		'dataset_name': 'MNIST_imgs',

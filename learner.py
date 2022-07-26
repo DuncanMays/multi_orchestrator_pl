@@ -13,7 +13,7 @@ from threading import Thread, Lock
 
 from config import config
 from tasks import tasks
-from states import state_dicts, state, stressor_thread, set_state
+from states import state_dicts, get_state, stressor_thread, set_state
 from utils import set_parameters, get_parameter_server
 from benchmark import dst_file
 
@@ -61,12 +61,12 @@ def set_training_regime(incoming_task_name=config.default_task_name, incomming_n
 def local_update():
 	print('performing local update routine')
 
-	global device, task_name, num_shards, num_iters, state
+	global device, task_name, num_shards, num_iters 
 
 	task_description = tasks[task_name]
 	ps = get_parameter_server()
 
-	print(f'training {task_name} in state: {state}')
+	print(f'training {task_name} in state: {get_state()}')
 	print('downloading parameters')
 	parameters = ps.rpcs.get_parameters.sync_call((task_name, ), {})
 

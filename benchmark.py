@@ -4,7 +4,7 @@ from itertools import product
 from config import config
 from utils import get_parameter_server
 from tqdm import tqdm
-from states import allowed_states, stressor_thread
+from states import get_state, set_state, allowed_states, stressor_thread
 
 import time
 import pickle
@@ -16,7 +16,6 @@ benchmark_downloads = 5
 # the number of shards each learner will train on while benchmarking
 benchmark_shards = 10
 BATCH_SIZE = 32
-state = 'idle'
 dst_file = './benchmark_scores.pickle'
 
 def run_benchmarks():
@@ -24,18 +23,17 @@ def run_benchmarks():
 
 	for task_name, state_name in product(task_names, allowed_states):
 		set_state(state_name)
+
+		# wait a second for the new stressor to run
+		time.sleep(1)
+
+		# run benchmark
 		benchmark_scores[(task_name, state_name)] = benchmark(task_name, benchmark_downloads, benchmark_shards)
 
 	return benchmark_scores
 
-def set_state(new_state='idle'):
-	global state
-
-	if new_state in allowed_states: 
-		state = new_state
-
-def benchmark(task_name='minst_ffn', num_downloads=1, num_shards=3):
-	print(f'running benchmark for {task_name} in state: {state}')
+def benchmark(task_name='mnist_ffn', num_downloads=1, num_shards=3):
+	print(f'running benchmark for {task_name} in state: {get_state()}')
 
 	global device
 	task_description = tasks[task_name]
@@ -108,10 +106,16 @@ def benchmark(task_name='minst_ffn', num_downloads=1, num_shards=3):
 if (__name__ == '__main__'):
 	stressor_thread.start()
 
+	print('warming up')
+	benchmark()
+
+
 	benchmark_scores = run_benchmarks()
 
+	print('      | training rate bps | data time spb | param_time spb')
+
 	for task_name, state_name in product(task_names, allowed_states):
-		print(f'benchmark scores for {task_name} in {state_name} are: {benchmark_scores[(task_name, state_name)]}')
+		print(f'{task_name} in {state_name}: {benchmark_scores[(task_name, state_name)]}')
 
 	print(f'writing to {dst_file}')
 

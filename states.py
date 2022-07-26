@@ -12,7 +12,7 @@ device = config.training_device
 def idle_stressor():
 	pass
 
-s = 10*60
+s = 1000
 
 a = torch.randn([s, s]).to(device)
 b = torch.randn([s, s]).to(device)
@@ -48,7 +48,7 @@ state_dicts = {
 
 	'downloading': {
 		'stressor_fn': download_stressor,
-		'params': (ps, 5),
+		'params': (ps, 50),
 		'probability': 0.4,
 	},
 
@@ -62,6 +62,10 @@ state_dicts = {
 state = 'idle'
 state_lock = Lock()
 allowed_states = [state_name for state_name in state_dicts]
+
+def get_state():
+	global state
+	return state
 
 def set_state(new_state='idle'):
 	global state
