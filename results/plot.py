@@ -3,7 +3,7 @@ import json
 import os
 
 # the directory we'll be loading data from
-src_dir = 'testing_1'
+src_dir = 'EOL_line_plot_0'
 # the filenames in the source directory
 file_names = os.listdir(src_dir)
 # we only want the ones that end in .json
@@ -55,6 +55,18 @@ for task_name in averages:
 		t.append(total_time)
 
 	time_axes[task_name] = t
+
+for task_name in averages:
+	plt.plot(gui_axis, [dp['acc'] for dp in averages[task_name]], label=task_name)
+
+plt.legend()
+plt.title('EOL')
+plt.ylabel('Accuracy (fraction)')
+plt.xlabel('Global Update Index')
+
+plt.show()
+
+exit()
 
 # we now plot the results
 fig, axs = plt.subplots(2, 2)

@@ -25,8 +25,8 @@ state_distribution = [state_dicts[state_name]['probability'] for state_name in s
 parameter_server = get_parameter_server()
 
 # this is where results will be recorded
-result_folder = './results/testing_1'
-result_file = 'test_0.json'
+result_folder = './results/MMET_line_plot_0'
+result_file = 'training_run_4.json'
 result_file_path = path_join(result_folder, result_file)
 
 # this is the dict where results will be recorded for each training run
@@ -42,7 +42,7 @@ def record_results(file_path):
 
 	except(FileNotFoundError):
 		print(f'file not found at {file_path}, recording data in backup.json')
-		with open('./baackup.json', 'w') as f:
+		with open('./backup.json', 'w') as f:
 			json_str = json.dumps(results)
 			f.write(json_str)		
 
@@ -65,7 +65,7 @@ async def training_routine(task_name, cluster_handle, num_training_cycles):
 		# randomly sets the state in each of the workers, according to state_distribution
 		new_states = random.choices(state_names, weights=state_distribution, k=num_learners_on_task)
 		new_states = [(s, ) for s in new_states]
-		print(new_states)
+		# print(new_states)
 		await cluster_handle.rpcs.set_state(new_states)
 
 		# performs the local training routine on each worker on the task
@@ -112,8 +112,8 @@ async def main():
 	# print('benchmark_scores:', benchmark_scores)
 
 	# now allocating data based on benchmark scores
-	association, allocation, iterations = EOL(benchmark_scores)
-	# association, allocation, iterations = MMET(benchmark_scores)
+	# association, allocation, iterations = EOL(benchmark_scores)
+	association, allocation, iterations = MMET(benchmark_scores)
 	# association, allocation, iterations = RSS(benchmark_scores)
 	# association, allocation, iterations = EEMO(benchmark_scores)
 
@@ -145,7 +145,7 @@ async def main():
 	await asyncio.gather(*training_promises)
 
 	# records results to a file
-	# record_results(result_file_path)
+	record_results(result_file_path)
 
 if (__name__ == '__main__'):
 	asyncio.run(main())
