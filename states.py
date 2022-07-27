@@ -37,19 +37,19 @@ state_dicts = {
 	'idle': {
 		'stressor_fn': idle_stressor,
 		'params': ( ),
-		'probability': 0.2,
+		'probability': 1.0,
 	}, 
 
 	'training': {
 		'stressor_fn': training_stressor,
 		'params': (600, ),
-		'probability': 0.4,
+		'probability': 0.0,
 	},
 
 	'downloading': {
 		'stressor_fn': download_stressor,
 		'params': (ps, 50),
-		'probability': 0.4,
+		'probability': 0.0,
 	},
 
 #	'uploading': {

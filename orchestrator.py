@@ -25,8 +25,8 @@ state_distribution = [state_dicts[state_name]['probability'] for state_name in s
 parameter_server = get_parameter_server()
 
 # this is where results will be recorded
-result_folder = './results/MMET_line_plot_0'
-result_file = 'training_run_4.json'
+result_folder = './results/state_entropy'
+result_file = 'RSS_3_workers_low_entropy_1.json'
 result_file_path = path_join(result_folder, result_file)
 
 # this is the dict where results will be recorded for each training run
@@ -113,8 +113,8 @@ async def main():
 
 	# now allocating data based on benchmark scores
 	# association, allocation, iterations = EOL(benchmark_scores)
-	association, allocation, iterations = MMET(benchmark_scores)
-	# association, allocation, iterations = RSS(benchmark_scores)
+	# association, allocation, iterations = MMET(benchmark_scores)
+	association, allocation, iterations = RSS(benchmark_scores)
 	# association, allocation, iterations = EEMO(benchmark_scores)
 
 	print(association)
