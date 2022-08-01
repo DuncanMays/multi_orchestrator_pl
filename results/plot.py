@@ -2,8 +2,11 @@ from matplotlib import pyplot as plt
 import json
 import os
 
+# data allocation method
+DAM = 'MMET'
+
 # the directory we'll be loading data from
-src_dir = 'EOL_line_plot_0'
+src_dir = DAM+'_line_plot_0'
 # the filenames in the source directory
 target_files = os.listdir(src_dir)
 # we only want the ones that end in .json
@@ -66,12 +69,11 @@ def main():
 		plt.plot(gui_axis, [dp['acc'] for dp in averages[task_name]], label=task_name)
 
 	# ---------------------------------------------------------------------------------
-	exit()
 
-	plt.legend()
-	plt.title('EOL')
-	plt.ylabel('Accuracy (fraction)')
-	plt.xlabel('Global Update Index')
+	plt.legend(prop={'size': 20})
+	plt.title(DAM, size=30)
+	plt.ylabel('Accuracy (fractional)', size=30)
+	plt.xlabel('Global Update Index', size=30)
 
 	plt.show()
 

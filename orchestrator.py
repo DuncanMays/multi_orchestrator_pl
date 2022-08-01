@@ -65,7 +65,6 @@ async def training_routine(task_name, cluster_handle, num_training_cycles):
 		# randomly sets the state in each of the workers, according to state_distribution
 		new_states = random.choices(state_names, weights=state_distribution, k=num_learners_on_task)
 		new_states = [(s, ) for s in new_states]
-		# print(new_states)
 		await cluster_handle.rpcs.set_state(new_states)
 
 		# performs the local training routine on each worker on the task
@@ -113,8 +112,8 @@ async def main():
 
 	# now allocating data based on benchmark scores
 	# association, allocation, iterations = EOL(benchmark_scores)
-	# association, allocation, iterations = MMET(benchmark_scores)
-	association, allocation, iterations = RSS(benchmark_scores)
+	association, allocation, iterations = MMET(benchmark_scores)
+	# association, allocation, iterations = RSS(benchmark_scores)
 	# association, allocation, iterations = EEMO(benchmark_scores)
 
 	print(association)
@@ -145,7 +144,7 @@ async def main():
 	await asyncio.gather(*training_promises)
 
 	# records results to a file
-	record_results(result_file_path)
+	# record_results(result_file_path)
 
 if (__name__ == '__main__'):
 	asyncio.run(main())

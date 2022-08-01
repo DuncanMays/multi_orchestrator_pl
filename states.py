@@ -12,21 +12,23 @@ device = config.training_device
 def idle_stressor():
 	pass
 
-s = 1000
-
-a = torch.randn([s, s]).to(device)
-b = torch.randn([s, s]).to(device)
+# s = 1000
+# a = torch.randn([s, s]).to(device)
+# b = torch.randn([s, s]).to(device)
 
 def training_stressor(n):
-	global a, b
+	s = 1000
+	a = torch.randn([s, s]).to(device)
+	b = torch.randn([s, s]).to(device)
 
-	c = a*b
-	b = c*a
-	a = b*c
+	for _ in range(n):
+		c = a*b
+		b = c*a
+		a = b*c
 
 def download_stressor(ps, n):
-	a = ps.rpcs.dummy_download.sync_call((10*n, 10*n), {})
-	del a
+	for _ in range(n):
+		ps.rpcs.dummy_download.sync_call((5000, 5000), {})
 
 def upload_stressor(ps):
 	a = torch.randn([100, 100])
@@ -37,19 +39,19 @@ state_dicts = {
 	'idle': {
 		'stressor_fn': idle_stressor,
 		'params': ( ),
-		'probability': 1.0,
+		'probability': 0.34,
 	}, 
 
 	'training': {
 		'stressor_fn': training_stressor,
-		'params': (600, ),
-		'probability': 0.0,
+		'params': (500, ),
+		'probability': 0.33,
 	},
 
 	'downloading': {
 		'stressor_fn': download_stressor,
-		'params': (ps, 50),
-		'probability': 0.0,
+		'params': (ps, 5000),
+		'probability': 0.33,
 	},
 
 #	'uploading': {

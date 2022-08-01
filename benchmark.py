@@ -10,7 +10,7 @@ import time
 import pickle
 
 device = config.training_device
-task_names = [task_name for task_name in tasks]
+task_names = tasks.keys()
 # the number of times each learner will download the model while benchmarking
 benchmark_downloads = 5
 # the number of shards each learner will train on while benchmarking
@@ -107,8 +107,9 @@ if (__name__ == '__main__'):
 	stressor_thread.start()
 
 	print('warming up')
-	benchmark()
-
+	for tn in task_names:
+		print(tn)
+		benchmark(task_name=tn)
 
 	benchmark_scores = run_benchmarks()
 
