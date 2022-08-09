@@ -13,7 +13,7 @@ from threading import Thread, Lock
 
 from config import config
 from tasks import tasks
-from states import state_dicts, get_state, stressor_thread, set_state
+from states import state_dicts, get_state, get_state_distribution, stressor_thread, set_state, training_stressor, set_state_distribution
 from utils import set_parameters, get_parameter_server
 from benchmark import dst_file
 
@@ -34,6 +34,12 @@ benchmark_scores = {}
 
 # makes set_state an RPC so the orchestrator can set the state of this worker
 axon.worker.rpc()(set_state)
+
+# so the orchestrator can get the state distribution
+axon.worker.rpc()(get_state_distribution)
+
+# so the orchestrator can set the state distribution
+axon.worker.rpc()(set_state_distribution)
 
 @axon.worker.rpc()
 def get_benchmark_scores():
@@ -58,6 +64,13 @@ def set_training_regime(incoming_task_name=config.default_task_name, incomming_n
 	num_iters = incomming_num_iters
 
 @axon.worker.rpc()
+def get_data_allocated():
+	global num_shards
+	return num_shards
+
+a = 500
+
+@axon.worker.rpc()
 def local_update():
 	print('performing local update routine')
 
@@ -65,9 +78,17 @@ def local_update():
 
 	task_description = tasks[task_name]
 	ps = get_parameter_server()
+	state = get_state()
+	state_desc = state_dicts[state]
+	stressor_handle = None
 
 	print(f'training {task_name} in state: {get_state()}')
 	print('downloading parameters')
+
+	if (state == 'downloading'):
+		stressor_handle = ps.rpcs.dummy_download.async_call((a, a), {})
+		stressor_handle.join()
+
 	parameters = ps.rpcs.get_parameters.sync_call((task_name, ), {})
 
 	print('instantiating neural network')
@@ -83,7 +104,14 @@ def local_update():
 
 	# downloading num_shards data samples
 	print('downloading data')
+
+	if (state == 'downloading'):
+		stressor_handle = ps.rpcs.dummy_download.async_call((a, a), {})
+
 	x_shards, y_shards = ps.rpcs.get_training_data.sync_call((task_name, num_shards, ), {})
+
+	if (state == 'downloading'):
+		stressor_handle.join()
 
 	print('reshaping data')
 	x_train = x_shards.reshape([x_shards.shape[0]*x_shards.shape[1]]+task_description['data_shape'])/255.0
@@ -112,11 +140,20 @@ def local_update():
 			optimizer.step()
 			optimizer.zero_grad()
 
+			if (state == 'training'):
+				training_stressor(300)
+
 	# marshalls the neural net's parameters
 	param_update = [p.to('cpu') for p in list(net.parameters())]
 
 	print('uploading parameters to PS')
+	if (state == 'downloading'):
+		stressor_handle = ps.rpcs.dummy_download.async_call((a, a), {})
+
 	ps.rpcs.submit_update.sync_call((task_name, param_update, num_shards, ), {})
+
+	if (state == 'downloading'):
+		stressor_handle.join()
 
 	# clearing data and parameters to save memory
 	del x_shards, y_shards, x_train, y_train, parameters, param_update
@@ -136,7 +173,7 @@ if (__name__ == '__main__'):
 		benchmark_scores = pickle.loads(buffer)
 
 	# starts stressor thread, this runs stressors that put the worker in different states
-	stressor_thread.start()
+	# stressor_thread.start()
 
 	# sign into notice board, this is so that clients can discover this worker
 	axon.discovery.sign_in(ip=config.notice_board_ip)

@@ -4,6 +4,7 @@ from threading import Thread, Lock
 
 import torch
 import time
+import random
 
 ps = get_parameter_server()
 
@@ -12,67 +13,80 @@ device = config.training_device
 def idle_stressor():
 	pass
 
-# s = 1000
-# a = torch.randn([s, s]).to(device)
-# b = torch.randn([s, s]).to(device)
-
-def training_stressor(n):
-	s = 1000
+def training_stressor(s):
 	a = torch.randn([s, s]).to(device)
 	b = torch.randn([s, s]).to(device)
-
-	for _ in range(n):
-		c = a*b
-		b = c*a
-		a = b*c
+	
+	c = a*b
+	b = c*a
+	a = b*c
 
 def download_stressor(ps, n):
 	for _ in range(n):
 		ps.rpcs.dummy_download.sync_call((5000, 5000), {})
-
-def upload_stressor(ps):
-	a = torch.randn([100, 100])
-	ps.rpcs.dummy_upload.sync_call((a, ), {})
 
 # this is the dict that describes each state
 state_dicts = {
 	'idle': {
 		'stressor_fn': idle_stressor,
 		'params': ( ),
-		'probability': 0.34,
+		'probability': 0.34
 	}, 
 
 	'training': {
 		'stressor_fn': training_stressor,
-		'params': (500, ),
-		'probability': 0.33,
+		'params': (50, ),
+		'probability': 0.33
 	},
 
 	'downloading': {
 		'stressor_fn': download_stressor,
-		'params': (ps, 5000),
-		'probability': 0.33,
+		'params': (ps, 50),
+		'probability': 0.33
 	},
 
-#	'uploading': {
-#		'stressor_fn': upload_stressor,
-#		'params': (ps, ),
-#		'probability': 0.15,
-#	},
 }
 
 state = 'idle'
 state_lock = Lock()
 allowed_states = [state_name for state_name in state_dicts]
 
+# state_heat controls how spread out the worker's state distribution is, hotter distributions are more spread out, colder ones more concentrated on one state
+state_heat = 1/2
+# this is the distribution that controls how workers change states
+state_distribution = torch.softmax(torch.randint(0, 2, (len(allowed_states), ))/state_heat, dim=0).tolist()
+
 def get_state():
 	global state
-	return state
+	with state_lock:
+		return state
 
-def set_state(new_state='idle'):
+def get_state_distribution():
+	global state_distribution
+	return state_distribution
+
+def set_state_distribution(new_distribution):
+	global state_distribution
+
+	if (sum(new_distribution) >= 1.01) or (sum(new_distribution) <= 0.99):
+		raise BaseException('invalid probability distribution')
+
+	if (len(new_distribution) != len(allowed_states)):
+		raise BaseException('number of indices in distribution list doesn\'t match number of states')
+
+	state_distribution = new_distribution
+
+# this function sets the state of the worker, if no input is given it samples an input from the worker's state distribution
+def set_state(new_state=None):
 	global state
 
-	if new_state in allowed_states: 
+	if (new_state == None):
+		new_state = random.choices(allowed_states, state_distribution).pop()
+
+		with state_lock:
+			state = new_state
+
+	elif new_state in allowed_states: 
 		with state_lock:
 			state = new_state
 	

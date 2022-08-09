@@ -17,7 +17,7 @@ def get_2D_list(W, H):
 		l.append(r)
 	return l
 
-def run_model(workers, requesters):
+def run_model(workers, requesters, state_probabilities):
 	# ? some sort of configuration object?
 	GRB = gurobi.GRB()
 	# the model
@@ -68,7 +68,7 @@ def run_model(workers, requesters):
 		for state_index in range(num_states):
 			state_name = state_names[state_index]
 			tsh = (task_names[i], state_name)
-			ed += state_dicts[state_name]['probability']*delay(i, j, tsh)
+			ed += state_probabilities[j][state_index]*delay(i, j, tsh)
 
 		return ed
 
@@ -82,7 +82,7 @@ def run_model(workers, requesters):
 		for state_index in range(num_states):
 			state_name = state_names[state_index]
 			tsh = (task_names[i], state_name)
-			state_prob = state_dicts[state_name]['probability']
+			state_prob = state_probabilities[j][state_index]
 
 			eol += state_prob*(delay(i, j, tsh) - min([delay(i, j_prime, tsh) for j_prime in range(num_workers)]))
 

@@ -4,7 +4,7 @@ from itertools import product
 from config import config
 from utils import get_parameter_server
 from tqdm import tqdm
-from states import get_state, set_state, allowed_states, stressor_thread
+from states import get_state, set_state, allowed_states, stressor_thread, training_stressor
 
 import time
 import pickle
@@ -14,7 +14,7 @@ task_names = tasks.keys()
 # the number of times each learner will download the model while benchmarking
 benchmark_downloads = 5
 # the number of shards each learner will train on while benchmarking
-benchmark_shards = 10
+benchmark_shards = 20
 BATCH_SIZE = 32
 dst_file = './benchmark_scores.pickle'
 
@@ -41,13 +41,23 @@ def benchmark(task_name='mnist_ffn', num_downloads=1, num_shards=3):
 	# given the task, get the neural architecture and data shape from the 
 	
 	ps = get_parameter_server()
+	state = get_state()
+	stressor_handle = None
 
 	# downloads parameters, times it, and takes the average
+	print('downloading parameters')
 	start_time = time.time()
+
 	for i in range(num_downloads):
+
+		if (state == 'downloading'):
+			stressor_handle = ps.rpcs.dummy_download.async_call((500, 500), {})
+			stressor_handle.join()
+
 		call_handle = ps.rpcs.get_parameters.async_call((task_name, ), {})
 		parameters = call_handle.join()
 
+	print('finished downloading parameters')
 	end_time = time.time()
 	param_time_spb = (end_time - start_time)/num_downloads
 
@@ -64,9 +74,18 @@ def benchmark(task_name='mnist_ffn', num_downloads=1, num_shards=3):
 	# downloading num_shards data samples
 	print('downloading data')
 	start_time = time.time()
+
+	if (state == 'downloading'):
+			stressor_handle = ps.rpcs.dummy_download.async_call((500, 500), {})
+
 	x_shards, y_shards = ps.rpcs.get_training_data.sync_call((task_name, num_shards, ), {})
+
+	if (state == 'downloading'):
+			stressor_handle.join()
+
 	end_time = time.time()
 
+	print('finished downloading data')
 	data_time_spb = (end_time - start_time)/num_shards
 
 	print('reshaping data')
@@ -76,6 +95,7 @@ def benchmark(task_name='mnist_ffn', num_downloads=1, num_shards=3):
 	num_batches = x_benchmark.shape[0] // BATCH_SIZE
 
 	# we now train the network on this random data and time how long it takes
+	print('training')
 	start_time = time.time()
 
 	# training the network on the data we just downloaded
@@ -94,6 +114,10 @@ def benchmark(task_name='mnist_ffn', num_downloads=1, num_shards=3):
 		optimizer.step()
 		optimizer.zero_grad()
 
+		if (state == 'training'):
+			training_stressor(300)
+
+	print('finished training')
 	end_time = time.time()
 
 	# calcuating the training rate of the worker in batches per second
@@ -104,7 +128,7 @@ def benchmark(task_name='mnist_ffn', num_downloads=1, num_shards=3):
 	return training_rate_bps, data_time_spb, param_time_spb
 
 if (__name__ == '__main__'):
-	stressor_thread.start()
+	# stressor_thread.start()
 
 	print('warming up')
 	for tn in task_names:

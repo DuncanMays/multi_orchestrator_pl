@@ -7,6 +7,7 @@ sys.path.append('..')
 
 import learner
 from tasks import tasks
+from states import set_state, allowed_states
 from config import config
 
 def test_get_price():
@@ -24,8 +25,10 @@ def test_benchmark():
 def test_local_update():
 
 	learner.set_training_regime()
-
-	learner.local_update()
+	
+	for state_name in allowed_states:
+		set_state(state_name)
+		learner.local_update()
 
 def test_training_regime():
 	task_name = 'mnist_cnn'
@@ -44,14 +47,14 @@ def test_startup():
 	print(learner.startup())
 
 def main():
-	print(' --- test_get_price --- ')
-	test_get_price()
+	# print(' --- test_get_price --- ')
+	# test_get_price()
 
 	# print(' --- test_benchmark --- ')
 	# test_benchmark()
 
-	# print(' --- test_local_update --- ')
-	# test_local_update()
+	print(' --- test_local_update --- ')
+	test_local_update()
 
 	# print(' --- test_training_regime --- ')
 	# test_training_regime()
