@@ -2,6 +2,7 @@ import axon
 import torch
 
 from data.MNIST_data import img_x_train, flat_x_train, y_train, img_x_test, flat_x_test, y_test
+from data.fashion_data import fashion_train_images, fashion_train_labels, fashion_test_images, fashion_test_labels
 from tasks import tasks
 from utils import set_parameters, average_parameters
 
@@ -11,8 +12,8 @@ device = 'cpu'
 if torch.cuda.is_available():
 	device = 'cuda:0'
 
-data_map = {'mnist_ffn': (flat_x_train, y_train), 'mnist_cnn': (img_x_train, y_train)}
-test_data_map = {'mnist_ffn': (flat_x_test, y_test), 'mnist_cnn': (img_x_test, y_test)}
+data_map = {'mnist_ffn': (flat_x_train, y_train), 'mnist_cnn': (img_x_train, y_train), 'fashion': (fashion_train_images, fashion_train_labels)}
+test_data_map = {'mnist_ffn': (flat_x_test, y_test), 'mnist_cnn': (img_x_test, y_test), 'fashion': (fashion_test_images, fashion_test_labels)}
 
 model_map = {}
 for task_name in tasks:

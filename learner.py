@@ -22,12 +22,12 @@ price = 0.1
 num_test_shards = 20
 BATCH_SIZE = 32
 state_names = [state_name for state_name in state_dicts]
-
 task_names = [task_name for task_name in tasks]
 task_name = config.default_task_name
 num_shards = config.delta
 num_iters = 1
 device = config.training_device
+check_deadline_interval = 10
 
 # holds the learner's benchmark scores once they're read from disk
 benchmark_scores = {}
@@ -57,11 +57,18 @@ def get_price():
 	return price
 
 @axon.worker.rpc()
-def set_training_regime(incoming_task_name=config.default_task_name, incomming_num_shards=config.delta, incomming_num_iters=1):
-	global task_name, num_shards, num_iters
+def set_training_regime(
+		incoming_task_name=config.default_task_name,
+		incomming_num_shards=config.delta,
+		incomming_num_iters=1,
+		check_deadline_every=10
+	):
+
+	global task_name, num_shards, num_iters, check_deadline_interval
 	task_name = incoming_task_name
 	num_shards = incomming_num_shards
 	num_iters = incomming_num_iters
+	check_deadline_interval = check_deadline_every
 
 @axon.worker.rpc()
 def get_data_allocated():
@@ -74,13 +81,19 @@ a = 500
 def local_update():
 	print('performing local update routine')
 
-	global device, task_name, num_shards, num_iters 
+	global device, task_name, num_shards, num_iters, check_deadline_interval
 
 	task_description = tasks[task_name]
 	ps = get_parameter_server()
 	state = get_state()
 	state_desc = state_dicts[state]
 	stressor_handle = None
+	start_time = time.time()
+	deadline = task_description['deadline']
+
+	# returns None, aborts the training loop if we're past the deadline
+	def check_deadline():
+		return (time.time() - start_time) > deadline
 
 	print(f'training {task_name} in state: {get_state()}')
 	print('downloading parameters')
@@ -118,10 +131,11 @@ def local_update():
 	y_train = y_shards.reshape([y_shards.shape[0]*y_shards.shape[1]])
 	
 	num_batches = x_train.shape[0] // BATCH_SIZE
+	# ratio of training loop that has been completed in the event that the training is cut short by the deadline
+	batches_completed = 0
+	training_start_time = time.time()
 
-	# we now train the network on this random data and time how long it takes
-
-	# training the network on random data
+	# training the network
 	print('training')
 	for i in range(num_iters):
 		print(f'iteration {i+1} of {num_iters}')
@@ -143,6 +157,24 @@ def local_update():
 			if (state == 'training'):
 				training_stressor(300)
 
+			if (batch_number%check_deadline_interval == 0):
+				if check_deadline():
+					# the number of batches completed in this epoch
+					batches_completed += batch_number + 1
+
+					# end the loop over batches
+					break
+
+		if check_deadline():
+			# end the training loop over epochs
+			break
+
+		else:
+			batches_completed += num_batches
+
+	# the amount of time spent training
+	training_time = time.time() - training_start_time
+
 	# marshalls the neural net's parameters
 	param_update = [p.to('cpu') for p in list(net.parameters())]
 
@@ -155,8 +187,17 @@ def local_update():
 	if (state == 'downloading'):
 		stressor_handle.join()
 
-	# clearing data and parameters to save memory
-	del x_shards, y_shards, x_train, y_train, parameters, param_update
+	# calculates the time remaining
+	total_batches = num_iters*num_batches
+	completed_ratio = batches_completed/total_batches
+	if (completed_ratio != 1):
+		time_remaining = training_time*(1/completed_ratio - 1)
+	else:
+		time_remaining = 0.0
+
+	total_time = time.time() - start_time
+
+	return total_time, min(100, max(time_remaining, 0))
 
 def shutdown_handler(a, b):
 	axon.discovery.sign_out(ip=config.notice_board_ip)

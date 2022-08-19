@@ -2,7 +2,7 @@ import gurobi
 from itertools import product
 
 from states import state_dicts
-from tasks import tasks
+from tasks import tasks, global_budget
 from optimizers.list_utils import get_2D_list, get_multilist
 
 task_names = [name for name in tasks]
@@ -85,7 +85,7 @@ def run_model(workers, requesters, state_probabilities):
 	# means that the total number of data shards assigned from a requester must equal some integer
 	m_prime.addConstrs(( sum([ d_prime[r][w][s] for w in range(num_workers) ]) == requesters[r].dataset_size for (r, s) in rs_combinations), 'c3_prime')
 	# means that the total cost of assignment for a requester in each state may not exceed their budget
-	m_prime.addConstrs((sum([ workers[w].price*d_prime[r][w][s] for w in range(num_workers) ]) <= requesters[r].budget for (r, s) in rs_combinations), 'c4')
+	m_prime.addConstrs((sum([ workers[w].price*d_prime[r][w][s] for (r, w) in rw_combinations ]) <= global_budget for s in range(num_states)), 'c4')
 	# means that the amount of data shards assigned to a worker must be greater than delta
 	m_prime.addConstrs((gurobi.quicksum([ d_prime[r][w][s] for r in range(num_requesters) ]) >= delta for (w, s) in ws_combinations), 'c6')
 
@@ -118,7 +118,8 @@ def run_model(workers, requesters, state_probabilities):
 	# c3 means that the total number of data shards assigned from a requester must equal some integer
 	m.addConstrs(( sum([ d[r][w] for w in range(num_workers) ]) == requesters[r].dataset_size for r in range(num_requesters)), 'c3')
 	# c4 means that the total cost of assignment for a requester may not exceed their budget
-	m.addConstrs((sum([ workers[j].price*d[i][j] for j in range(num_workers) ]) <= requesters[i].budget for i in range(num_requesters)), 'c4')
+	# m.addConstrs((sum([ workers[j].price*d[i][j] for j in range(num_workers) ]) <= requesters[i].budget for i in range(num_requesters)), 'c4')
+	m.addConstr(gurobi.quicksum([ workers[j].price*d[i][j] for i, j in rw_combinations ]) <= global_budget, 'c4')
 	# # c5 means that the a worker may only recieve data shards from one requester
 	m.addConstrs(( gurobi.quicksum([ x[i][j] for i in range(num_requesters) ] ) <= 1 for j in range(num_workers)), 'c5')
 	# # c6 means that the amount of data shards assigned to a worker must be greater than delta
@@ -169,9 +170,9 @@ def run_model(workers, requesters, state_probabilities):
 		association[i][j] = x[i][j].X
 		allocation[i][j] = d[i][j].X
 
-	print('Prime metric ---> ', end='')
-	print(prime_objective.getValue())
-	print('EOL metric ---> ', end='')
-	print(EOL_objective.getValue())
+	# print('Prime metric ---> ', end='')
+	# print(prime_objective.getValue())
+	# print('EOL metric ---> ', end='')
+	# print(EOL_objective.getValue())
 
-	return association, allocation
+	return association, allocation, EOL_objective.getValue()

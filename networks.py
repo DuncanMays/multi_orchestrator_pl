@@ -132,3 +132,44 @@ class ConvNet(torch.nn.Module):
         self.device = device
         super(ConvNet, self).to(device)
         return self
+
+class FashionNet(torch.nn.Module):
+
+    def __init__(self):
+        super(FashionNet, self).__init__()
+
+        # 28*28*1
+        self.conv1 = torch.nn.Conv2d(1, 32, (3, 3),  padding=(1, 1))
+        # 28*28*32
+
+        # a (2,2) max pooling layer
+
+        # 14*14*32
+        self.conv2 = torch.nn.Conv2d(32, 64, (3, 3),  padding=(1, 1))
+        # 14*14*64
+
+        # another (2,2) max pooling layer
+
+        # 7*7*64 = 3136
+        self.fc1 = torch.nn.Linear(3136, 2000)
+        self.fc2 = torch.nn.Linear(2000, 1000)
+        self.fc3 = torch.nn.Linear(1000, 10)
+
+    def forward(self, x):
+
+        x = self.conv1(x)
+        x = F.relu(x)
+        x = F.max_pool2d(x, (2, 2))
+
+        x = self.conv2(x)
+        x = F.relu(x)
+        x = F.max_pool2d(x, (2, 2))
+
+
+        x = x.view(-1, 3136)
+        
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.softmax(self.fc3(x), dim=1)
+
+        return x

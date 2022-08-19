@@ -2,7 +2,7 @@ import gurobi
 from itertools import product
 
 from states import state_dicts
-from tasks import tasks
+from tasks import tasks, global_budget
 
 task_names = [name for name in tasks]
 state_names = [name for name in state_dicts]
@@ -75,8 +75,8 @@ def run_model(workers, requesters):
 	# c3 means that the total number of data shards assigned from a requester must equal some integer
 	m.addConstrs(( sum([ d[i][j] for j in range(num_workers) ]) == requesters[i].dataset_size for i in range(num_requesters)), 'c3')
 
-	# c4 means that the total cost of assignment for a requester may not exceed their budget
-	m.addConstrs((sum([ workers[j].price*d[i][j] for j in range(num_workers) ]) <= requesters[i].budget for i in range(num_requesters)), 'c4')
+	# c4 means that the sum of the cost of assignment for all requester may not exceed the budget
+	m.addConstr(gurobi.quicksum([ workers[j].price*d[i][j] for i, j in combinations ]) <= global_budget, 'c4')
 
 	# # c5 means that the a worker may only recieve data shards from one requester
 	m.addConstrs(( gurobi.quicksum([ x[i][j] for i in range(num_requesters) ] ) <= 1 for j in range(num_workers)), 'c5')
