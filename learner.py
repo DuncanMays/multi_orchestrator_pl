@@ -65,6 +65,10 @@ def set_training_regime(
 	):
 
 	global task_name, num_shards, num_iters, check_deadline_interval
+
+	print('set training regime')
+	print(incoming_task_name)
+	
 	task_name = incoming_task_name
 	num_shards = incomming_num_shards
 	num_iters = incomming_num_iters
@@ -75,7 +79,8 @@ def get_data_allocated():
 	global num_shards
 	return num_shards
 
-a = 500
+download_stressor_size = 900
+training_stressor_size = 900
 
 @axon.worker.rpc()
 def local_update():
@@ -84,6 +89,7 @@ def local_update():
 	global device, task_name, num_shards, num_iters, check_deadline_interval
 
 	task_description = tasks[task_name]
+	print(task_name)
 	ps = get_parameter_server()
 	state = get_state()
 	state_desc = state_dicts[state]
@@ -99,7 +105,7 @@ def local_update():
 	print('downloading parameters')
 
 	if (state == 'downloading'):
-		stressor_handle = ps.rpcs.dummy_download.async_call((a, a), {})
+		stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
 		stressor_handle.join()
 
 	parameters = ps.rpcs.get_parameters.sync_call((task_name, ), {})
@@ -119,7 +125,8 @@ def local_update():
 	print('downloading data')
 
 	if (state == 'downloading'):
-		stressor_handle = ps.rpcs.dummy_download.async_call((a, a), {})
+		stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
+		stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
 
 	x_shards, y_shards = ps.rpcs.get_training_data.sync_call((task_name, num_shards, ), {})
 
@@ -155,7 +162,7 @@ def local_update():
 			optimizer.zero_grad()
 
 			if (state == 'training'):
-				training_stressor(300)
+				training_stressor(training_stressor_size)
 
 			if (batch_number%check_deadline_interval == 0):
 				if check_deadline():
@@ -180,7 +187,8 @@ def local_update():
 
 	print('uploading parameters to PS')
 	if (state == 'downloading'):
-		stressor_handle = ps.rpcs.dummy_download.async_call((a, a), {})
+		stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
+		stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
 
 	ps.rpcs.submit_update.sync_call((task_name, param_update, num_shards, ), {})
 

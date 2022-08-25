@@ -30,6 +30,10 @@ def run_model(workers, requesters, state_probabilities):
 	d_prime = get_multilist([num_requesters, num_workers, num_states])
 	x_prime = get_multilist([num_requesters, num_workers, num_states])
 
+	# ceiling variables
+	c = get_multilist([num_requesters])
+	c_prime = get_multilist([num_requesters, num_states])
+
 	# the enumeration of indices of workers, requesters, and states
 	rws_combinations = list(product(range(num_requesters), range(num_workers), range(num_states)))
 	# likewise for workers/requesters, requesters/states, and workers/states
@@ -37,15 +41,22 @@ def run_model(workers, requesters, state_probabilities):
 	rs_combinations = list(product(range(num_requesters), range(num_states)))
 	ws_combinations = list(product(range(num_workers), range(num_states)))
 
+
 	for (i, j) in rw_combinations:
 		# worker/requester associations
 		x[i][j] = m.addVar(vtype=GRB.BINARY, name="x"+str((i, j)))
 		# data allocation
 		d[i][j] = m.addVar(vtype=GRB.INTEGER, name="d"+str((i, j)))
 
+	for r, s in rs_combinations:
+		c_prime[r][s] = m_prime.addVar(vtype=GRB.INTEGER, name='c_prime'+str((r, s)))
+
 	for (r, w, s) in rws_combinations:
 		x_prime[r][w][s] = m_prime.addVar(vtype=GRB.BINARY, name="x_prime"+str((r, w, s)))
 		d_prime[r][w][s] = m_prime.addVar(vtype=GRB.INTEGER, name="d_prime"+str((r, w, s)))
+
+	for r in range(num_requesters):
+		c[r] = m.addVar(vtype=GRB.INTEGER, name='c'+str(r))
 
 	# gurobi models update lazily, this executes the addVar statements above
 	m.update()
@@ -57,7 +68,7 @@ def run_model(workers, requesters, state_probabilities):
 	# this function takes task, worker and state index and returns the delay according to the prime data distribution
 	def delay_prime(t, w, s):
 		tsh = (task_names[t], state_names[s])
-		return 2*workers[w].param_times[tsh] + d_prime[t][w][s]*workers[w].data_times[tsh] + requesters[t].num_iters*d_prime[t][w][s]/workers[w].training_rates[tsh]
+		return x_prime[t][w][s]*(2*workers[w].param_times[tsh] + d_prime[t][w][s]*workers[w].data_times[tsh] + requesters[t].num_iters*d_prime[t][w][s]/workers[w].training_rates[tsh])
 
 	# this function represents the expected time that worker j will take to evaluate the learning task assigned to them from requester i
 	def expected_delay(i, j):
@@ -82,6 +93,9 @@ def run_model(workers, requesters, state_probabilities):
 	m_prime.addConstrs(( (x_prime[r][w][s] == 0) >> (d_prime[r][w][s] == 0) for (r, w, s) in rws_combinations ), 'i1_prime')
 	# x being one means d is greater than zero
 	m_prime.addConstrs(( (x_prime[r][w][s] == 1) >> (d_prime[r][w][s] >= 1) for (r, w, s) in rws_combinations ), 'i2_prime')
+	# c1 means the time delay must not exceed the deadline of requester
+	m_prime.addConstrs((c_prime[r][s] <= requesters[r].T for (r, s) in rs_combinations) , 'c1.1_prime')
+	m_prime.addConstrs((delay_prime(r, w, s) <= c_prime[r][s] for (r, w, s) in rws_combinations) , 'c1.2_prime')
 	# means that the total number of data shards assigned from a requester must equal some integer
 	m_prime.addConstrs(( sum([ d_prime[r][w][s] for w in range(num_workers) ]) == requesters[r].dataset_size for (r, s) in rs_combinations), 'c3_prime')
 	# means that the total cost of assignment for a requester in each state may not exceed their budget
@@ -90,10 +104,12 @@ def run_model(workers, requesters, state_probabilities):
 	m_prime.addConstrs((gurobi.quicksum([ d_prime[r][w][s] for r in range(num_requesters) ]) >= delta for (w, s) in ws_combinations), 'c6')
 
 
-	prime_objective = gurobi.quicksum([ gurobi.quicksum([
-			state_probabilities[w][s]*delay_prime(r, w, s) for (w, s) in ws_combinations
-		]) for r in range(num_requesters) 
-	])
+	# prime_objective = gurobi.quicksum([ gurobi.quicksum([
+	# 		state_probabilities[w][s]*delay_prime(r, w, s) for (w, s) in ws_combinations
+	# 	]) for r in range(num_requesters) 
+	# ])
+
+	prime_objective = gurobi.quicksum([ c_prime[r][s] for r, s in rs_combinations ])
 
 	m_prime.setObjective(prime_objective, GRB.MINIMIZE)
 
@@ -113,7 +129,9 @@ def run_model(workers, requesters, state_probabilities):
 	# the last constraints are explicitly stated in the problem formulation
 
 	# c1 means the time delay must not exceed the deadline of requester i
-	m.addConstrs((expected_delay(i, j) <= requesters[i].T for (i, j) in rw_combinations) , 'c1')
+	m.addConstrs((c[r] <= requesters[r].T for r in range(num_requesters)) , 'c1.1')
+	m.addConstrs((expected_delay(r, w) <= c[r] for (r, w) in rw_combinations) , 'c1.2')
+
 	# c2 is an energy constraint
 	# c3 means that the total number of data shards assigned from a requester must equal some integer
 	m.addConstrs(( sum([ d[r][w] for w in range(num_workers) ]) == requesters[r].dataset_size for r in range(num_requesters)), 'c3')
@@ -129,34 +147,21 @@ def run_model(workers, requesters, state_probabilities):
 
 	# delay_prime(r, w, s).getValue() represents the right hand term, the minimum delay of allocation across all workers in the given state on the given task
 
-	EOL_objective = gurobi.quicksum([ gurobi.quicksum([
-		expected_delay(r, w) for w in range(num_workers)]) - gurobi.quicksum([
-			state_probabilities[w][s]*delay_prime(r, w, s).getValue() for (w, s) in ws_combinations
-		]) for r in range(num_requesters) 
-	])
+	# EOL_objective = gurobi.quicksum([ gurobi.quicksum([
+	# 	expected_delay(r, w) for w in range(num_workers)]) - gurobi.quicksum([
+	# 		state_probabilities[w][s]*delay_prime(r, w, s).getValue() for (w, s) in ws_combinations
+	# 	]) for r in range(num_requesters) 
+	# ])
 
-	# final_objective = EOL_objective + prime_objective
+	# c[r] is equal to the largest expected delay of each worker associated with task r, this is an implication of constraint c1.2
+	EOL_objective = gurobi.quicksum([ c[r] - gurobi.quicksum([
+			state_probabilities[w][s]*c_prime[r][s].X/num_states
+		for (w, s) in ws_combinations ])
+	for r in range(num_requesters) ])
 
 	m.setObjective(EOL_objective, GRB.MINIMIZE)
 
 	m.optimize()
-
-	# EOL_objective = gurobi.quicksum([ gurobi.quicksum([
-	# 	expected_delay(r, w) for w in range(num_workers)]) - gurobi.quicksum([
-	# 		state_probabilities[w][s]*delay_prime(r, w, s) for (w, s) in ws_combinations
-	# 	]) for r in range(num_requesters) 
-	# ])
-
-	print(gurobi.quicksum([ gurobi.quicksum([
-		expected_delay(r, w) for w in range(num_workers)]) for r in range(num_requesters)
-	]).getValue())
-
-	print(gurobi.quicksum([ gurobi.quicksum([
-			state_probabilities[w][s]*delay_prime(r, w, s) for (w, s) in ws_combinations
-		]) for r in range(num_requesters) 
-	]).getValue())
-
-	# print(expected_delay(0, 1).getValue())
 
 	association = get_2D_list(num_requesters, num_workers)
 	allocation = get_2D_list(num_requesters, num_workers)
@@ -169,10 +174,5 @@ def run_model(workers, requesters, state_probabilities):
 
 		association[i][j] = x[i][j].X
 		allocation[i][j] = d[i][j].X
-
-	# print('Prime metric ---> ', end='')
-	# print(prime_objective.getValue())
-	# print('EOL metric ---> ', end='')
-	# print(EOL_objective.getValue())
 
 	return association, allocation, EOL_objective.getValue()

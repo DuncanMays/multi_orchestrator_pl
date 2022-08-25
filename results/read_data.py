@@ -2,10 +2,10 @@ import json
 import sys
 import os
 
-sys.path.append('../..')
+sys.path.append('..')
 from tasks import tasks
 
-target_dir = 'data_files'
+target_dir = 'Aug_25_meeting/data_files'
 
 metrics = ['loss', 'acc', 'EOL', 'cost', 'training_time', 'sat_ratio']
 task_names = list(tasks.keys())

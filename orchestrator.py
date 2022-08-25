@@ -10,7 +10,7 @@ from os.path import join as path_join
 from tasks import tasks, global_budget
 from states import state_dicts
 from config import config
-from data_allocation import EOL_prime, RSS
+from data_allocation import EOL_prime, RSS, EOL_minmax
 from worker_composite import WorkerComposite
 from utils import get_parameter_server
 from types import SimpleNamespace
@@ -31,7 +31,7 @@ benchmark_shards = 10
 # the number of shards that is used to assess the testing loss and accuracy of each neural net
 testing_shards = 10
 # the number of times the orchestrator will attempt the data allocation calculation before quiting
-num_retries = 5
+num_retries = 10
 
 task_names = [task_name for task_name in tasks]
 state_names = [state_name for state_name in state_dicts]
@@ -61,7 +61,7 @@ def overwrite(a, b):
 args = overwrite(args, default_arguements)
 
 # this is where results will be recorded
-result_folder = './results/Aug_16_meeting/data_files'
+result_folder = './results/Aug_25_meeting/data_files'
 
 state_dist = None
 
@@ -191,15 +191,20 @@ async def main():
 	# print('benchmark_scores:', benchmark_scores)
 
 	association, allocation, iterations, EOL = None, None, None, None
-
-	for _ in range(num_retries):
+	
+	# try allocating a number of times, should mitigate 0 solution counts
+	for i in range(num_retries):
 		try:
-			# now allocating data based on benchmark scores
+
 			if (args.data_allocation_regime == 'EOL'):
 				association, allocation, iterations, EOL = EOL_prime(benchmark_scores, worker_prices, state_distributions)
+				# association, allocation, iterations, EOL = EOL_minmax(benchmark_scores, worker_prices, state_distributions)
 
 			elif (args.data_allocation_regime == 'TT'):
 				association, allocation, iterations, EOL = RSS(benchmark_scores, worker_prices)
+
+			elif (args.data_allocation_regime == 'EOL_max'):
+				association, allocation, iterations, EOL = EOL_minmax(benchmark_scores, worker_prices, state_distributions)
 
 			else:
 				raise(BaseException('unrecognized data_allocation_regime'))
@@ -209,6 +214,8 @@ async def main():
 		except(AttributeError):
 			pass
 
+	print('-------------------- ', i)
+
 	print(association)
 	print(allocation)
 	print(worker_prices)
@@ -216,6 +223,8 @@ async def main():
 	print(EOL)
 
 	# exit()
+	if (association == None):
+		exit()
 
 	cost = sum([a*p for (a, p) in zip(allocation, worker_prices)])
 	results['cost'] = cost

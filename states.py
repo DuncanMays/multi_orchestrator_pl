@@ -6,7 +6,7 @@ import torch
 import time
 import random
 
-ps = get_parameter_server()
+# ps = get_parameter_server()
 
 device = config.training_device
 
@@ -29,20 +29,20 @@ def download_stressor(ps, n):
 state_dicts = {
 	'idle': {
 		'stressor_fn': idle_stressor,
-		'params': ( ),
-		'probability': 0.34
+		# 'params': ( ),
+		# 'probability': 0.34
 	}, 
 
 	'training': {
 		'stressor_fn': training_stressor,
-		'params': (50, ),
-		'probability': 0.33
+		# 'params': (50, ),
+		# 'probability': 0.33
 	},
 
 	'downloading': {
 		'stressor_fn': download_stressor,
-		'params': (ps, 50),
-		'probability': 0.33
+		# 'params': (ps, 50),
+		# 'probability': 0.33
 	},
 
 }

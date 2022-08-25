@@ -32,6 +32,9 @@ def run_benchmarks():
 
 	return benchmark_scores
 
+download_stressor_size = 900
+training_stressor_size = 900
+
 def benchmark(task_name='mnist_ffn', num_downloads=1, num_shards=3):
 	print(f'running benchmark for {task_name} in state: {get_state()}')
 
@@ -51,7 +54,7 @@ def benchmark(task_name='mnist_ffn', num_downloads=1, num_shards=3):
 	for i in range(num_downloads):
 
 		if (state == 'downloading'):
-			stressor_handle = ps.rpcs.dummy_download.async_call((500, 500), {})
+			stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
 			stressor_handle.join()
 
 		call_handle = ps.rpcs.get_parameters.async_call((task_name, ), {})
@@ -76,7 +79,7 @@ def benchmark(task_name='mnist_ffn', num_downloads=1, num_shards=3):
 	start_time = time.time()
 
 	if (state == 'downloading'):
-			stressor_handle = ps.rpcs.dummy_download.async_call((500, 500), {})
+			stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
 
 	x_shards, y_shards = ps.rpcs.get_training_data.sync_call((task_name, num_shards, ), {})
 
@@ -115,7 +118,7 @@ def benchmark(task_name='mnist_ffn', num_downloads=1, num_shards=3):
 		optimizer.zero_grad()
 
 		if (state == 'training'):
-			training_stressor(300)
+			training_stressor(training_stressor_size)
 
 	print('finished training')
 	end_time = time.time()
