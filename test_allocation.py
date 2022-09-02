@@ -11,24 +11,22 @@ task_names = [task_name for task_name in tasks]
 state_names = [state_name for state_name in state_dicts]
 combinations = list(product(task_names, state_names))
 
-num_learners = 6
+num_learners = 5
 
 # benchmark scores is a list of a maps from (task, state) hashes to (training_rate_bps, data_time_spb, param_time_spb) tuples, each index being a learner
 benchmark_scores = []
 
 def get_learner_scores():
 	return (
-		5.878207711049711 + random.gauss(1, 1),
-		0.06955052614212036 + random.gauss(0.1, 0.1),
-		0.12813954353332518 + random.gauss(0.1, 0.1)
+		5.878207711049711 + random.gauss(0, 1),
+		max(0.06955052614212036 + random.gauss(0, 0.1), 0.01),
+		max(0.12813954353332518 + random.gauss(0, 0.2), 0.01)
 	)
 
 # each learner will be exactly the same, so will have the same benchmark scores
 def get_learner_dict():
 	learner = {}
 	for task, state in combinations:
-		# learner[(task, state)] = (46.19119831811909, 0.02295656204223633, 0.03764419555664063)
-		# learner[(task, state)] = (5.878207711049711, 0.06955052614212036, 0.12813954353332518)
 		learner[(task, state)] = get_learner_scores()
 
 	return learner

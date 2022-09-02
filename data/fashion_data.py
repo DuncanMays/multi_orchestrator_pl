@@ -10,8 +10,8 @@ fashion_mnist = tf.keras.datasets.fashion_mnist
 # reshaping
 (train_images, train_labels, test_images, test_labels) = (train_images.reshape([-1, 1, 28, 28]), train_labels, test_images.reshape([-1, 1, 28, 28]), test_labels)
 # normalizing
-train_images = train_images/255
-test_images = test_images/255
+train_images = train_images
+test_images = test_images
 
 shard_size = 500
 img_sample_shape = [1, 28, 28]

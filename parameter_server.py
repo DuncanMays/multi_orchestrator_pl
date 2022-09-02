@@ -72,8 +72,7 @@ def dummy_upload(input):
 @axon.worker.rpc()
 def submit_update(task_name, parameters, num_shards):
 	global update_map
-	print('update submitted for ', task_name)
-
+	print('update submitted for ', task_name, num_shards)
 	update_obj = {
 		'parameters': parameters,
 		'num_shards': num_shards,

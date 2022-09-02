@@ -190,7 +190,7 @@ def local_update():
 		stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
 		stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
 
-	ps.rpcs.submit_update.sync_call((task_name, param_update, num_shards, ), {})
+	ps.rpcs.submit_update.sync_call((task_name, param_update, batches_completed, ), {})
 
 	if (state == 'downloading'):
 		stressor_handle.join()

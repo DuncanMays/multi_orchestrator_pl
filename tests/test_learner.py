@@ -24,7 +24,7 @@ def test_benchmark():
 
 def test_local_update():
 
-	learner.set_training_regime('fashion', incomming_num_shards=1000)
+	learner.set_training_regime('fashion', incomming_num_shards=10)
 	
 	for state_name in allowed_states:
 		set_state(state_name)

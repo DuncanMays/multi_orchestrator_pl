@@ -23,7 +23,6 @@ for index, arg in enumerate(arg_list):
 
 args = SimpleNamespace(**arg_dict)
 
-
 # the number of times each learner will download the model while benchmarking
 benchmark_downloads = 5
 # the number of shards each learner will train on while benchmarking
@@ -43,7 +42,8 @@ default_arguements = SimpleNamespace(
 	data_allocation_regime = 'EOL',
 	ideal_worker_state = 'False',
 	experiment_name = 'default',
-	trial_index = '-1'
+	trial_index = '-1',
+	num_learners = len(task_names)
 )
 
 def overwrite(a, b):
@@ -61,7 +61,7 @@ def overwrite(a, b):
 args = overwrite(args, default_arguements)
 
 # this is where results will be recorded
-result_folder = './results/Aug_25_meeting/data_files'
+result_folder = './results/Sep_1_meeting'
 
 state_dist = None
 
@@ -70,8 +70,7 @@ if args.ideal_worker_state == 'True':
 else:
 	state_dist = 'uncertain'
 
-result_file = args.data_allocation_regime+'_'+state_dist+'_'+args.experiment_name+'_'+args.trial_index+'.json'
-print(result_file)
+result_file = args.data_allocation_regime+'_'+state_dist+'_'+args.num_learners+'_'+args.experiment_name+'_'+args.trial_index+'.json'
 result_file_path = path_join(result_folder, result_file)
 
 # this is the dict where metrics will be recorded for each training run
@@ -142,6 +141,29 @@ async def training_routine(task_name, cluster_handle, num_training_cycles):
 		data_point = {'times': timings, 'acc': acc, 'loss': loss}
 		training_metrics[task_name].append(data_point)
 
+# the ideal state distribution
+get_idle_dist = lambda : [sum([i == 0]) for i in range(len(state_names))]
+
+# samples a normal distribution to obtain worker prices
+get_random_price = lambda : min(max(random.gauss(config.worker_price_mean, config.worker_price_variance), config.worker_price_min), config.worker_price_max)
+
+# this function sets all the values that vary in between experiments, given the same set of workers between experiments
+# the two peices of information that change are the worker state distributions and the worker prices, both of which are returned by this function
+def initialize_parameters(num_learners):
+	worker_prices = [get_random_price() for _ in range(num_learners)]
+
+	state_distributions = None
+
+	if args.ideal_worker_state == 'True':
+		# state distributions are ideal
+		state_distributions = [get_idle_dist() for i in range(num_learners)]
+
+	else:
+		# randomly setting the state distributions of each worker, based on heat parameter
+		state_distributions = [create_state_distribution(heat_param) for _ in range(num_learners)]
+
+	return worker_prices, state_distributions
+
 async def main():
 	# resets the parameter server from the last training run
 	clear_promises = []
@@ -150,46 +172,34 @@ async def main():
 
 	await asyncio.gather(*clear_promises)
 
+	# get the IP addresses of each learner from the notice board
 	learner_ips = axon.discovery.get_ips(ip=config.notice_board_ip)
-	num_learners = len(learner_ips)
+	# the number of learners used in this trial, from command line arguement
+	num_learners = int(args.num_learners)
+
+	# sorting learner_ips in order of the last digit, this ensures that we always select the same learners on multiple runs
+	learner_ip_sort_key = lambda ip : int(ip.split('.')[-1])
+	learner_ips.sort(key=learner_ip_sort_key)
+
+	# selecting only the specified number of learners
+	learner_ips = learner_ips[0:num_learners]
 
 	print('learner_ips:', learner_ips)
 
 	# creates worker handles
-	learner_handles = []
-	for ip in learner_ips:
-		learner_handles.append(axon.client.RemoteWorker(ip))
+	learner_handles = [axon.client.RemoteWorker(ip) for ip in learner_ips]
 
-	# This worker composite sends commands to the whole cluster
+	# This worker composite sends commands to the whole cluster in a single line
 	global_cluster = WorkerComposite(learner_handles)
-
-	# the ideal state distribution
-	get_idle_dist = lambda : [sum([i == 0]) for i in range(len(state_names))]
-	new_distributions = None
-
-	if args.ideal_worker_state == 'True':
-		# state distributions are ideal
-		new_distributions = [(get_idle_dist(), ) for i in range(num_learners)]
-
-	else:
-		# randomly setting the state distributions of each worker, based on heat parameter
-		new_distributions = [(create_state_distribution(heat_param), ) for _ in learner_ips]
-
-	await global_cluster.rpcs.set_state_distribution(new_distributions)
 
 	# benchmark scores is a list of a maps from (task, state) hashes to (training_rate_bps, data_time_spb, param_time_spb) tuples, each index being a learner
 	benchmark_scores = await global_cluster.rpcs.get_benchmark_scores()
 
-	# a list of state distributions of each worker
-	state_distributions = await global_cluster.rpcs.get_state_distribution()
+	# getting the random parameters for this trials
+	worker_prices, state_distributions = initialize_parameters(num_learners)
+	print(state_distributions)
 
-	# randomly setting the worker prices
-	get_random_price = lambda : min(max(random.gauss(config.worker_price_mean, config.worker_price_variance), config.worker_price_min), config.worker_price_max)
-	worker_prices = [get_random_price() for _ in range(num_learners)]
-	# print(worker_prices)
-
-	# print('benchmark_scores:', benchmark_scores)
-
+	# the variables set by the optimization formulations
 	association, allocation, iterations, EOL = None, None, None, None
 	
 	# try allocating a number of times, should mitigate 0 solution counts
@@ -212,7 +222,8 @@ async def main():
 			break
 
 		except(AttributeError):
-			pass
+			# if allocation fails, try another set of parameters
+			worker_prices, state_distributions = initialize_parameters(num_learners)
 
 	print('-------------------- ', i)
 
@@ -223,6 +234,8 @@ async def main():
 	print(EOL)
 
 	# exit()
+
+	# if the optimization calculation fails, there's no need to proceed past this point
 	if (association == None):
 		exit()
 
@@ -230,6 +243,11 @@ async def main():
 	results['cost'] = cost
 	results['EOL'] = EOL
 
+	# after allocation calculation confirms the state distributions are viable, transmit them to workers so they can manage their state dynamics
+	state_distributions = [(s, ) for s in state_distributions]
+	await global_cluster.rpcs.set_state_distribution(state_distributions)
+
+	# tells the learners which task they're associated with and how much data to use while training
 	task_settings = list(zip(association, allocation, iterations))
 	await global_cluster.rpcs.set_training_regime(task_settings)
 

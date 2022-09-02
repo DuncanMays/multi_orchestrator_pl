@@ -1,13 +1,13 @@
 from read_data import avg_across_trials
 from matplotlib import pyplot as plt
 
-trial_indices = list([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+trial_indices = list([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
 num_workers = [3, 5, 7, 9]
 
 # metric = 'training_time'
-metrics = ['training_time', 'EOL', 'acc', 'loss', 'cost', 'sat_ratio']
+metrics = ['max_training_time', 'training_time', 'EOL', 'acc', 'loss', 'cost', 'sat_ratio', 'total_training_time']
 
-scheme_state_dists = [('EOL', 'uncertain'), ('EOL_max', 'uncertain'), ('TT', 'uncertain'), ('TT', 'ideal')]
+scheme_state_dists = [('EOL_max', 'uncertain'), ('TT', 'uncertain'), ('TT', 'ideal')]
 x = [i for i in range(len(num_workers))]
 
 for metric in metrics:

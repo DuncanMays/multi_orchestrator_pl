@@ -88,6 +88,8 @@ def run_model(workers, requesters, state_probabilities):
 	m_prime.addConstrs(( sum([ d_prime[r][w][s] for w in range(num_workers) ]) == requesters[r].dataset_size for (r, s) in rs_combinations), 'c3_prime')
 	# means that the total cost of assignment for a requester in each state may not exceed their budget
 	m_prime.addConstrs((sum([ workers[w].price*d_prime[r][w][s] for (r, w) in rw_combinations ]) <= global_budget for s in range(num_states)), 'c4')
+	# # c5 means that the a worker may only recieve data shards from one requester
+	m_prime.addConstrs(( gurobi.quicksum([ x_prime[r][w][s] for r in range(num_requesters) ] ) <= 1 for w, s in ws_combinations), 'c5')
 	# means that the amount of data shards assigned to a worker must be greater than delta
 	m_prime.addConstrs((gurobi.quicksum([ d_prime[r][w][s] for r in range(num_requesters) ]) >= delta for (w, s) in ws_combinations), 'c6')
 
