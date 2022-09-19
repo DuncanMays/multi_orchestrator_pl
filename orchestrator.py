@@ -10,7 +10,7 @@ from os.path import join as path_join
 from tasks import tasks, global_budget
 from states import state_dicts
 from config import config
-from data_allocation import EOL_prime, RSS, EOL_minmax
+from data_allocation import EOL_prime, RSS, MED, MMTT
 from worker_composite import WorkerComposite
 from utils import get_parameter_server
 from types import SimpleNamespace
@@ -43,7 +43,7 @@ default_arguements = SimpleNamespace(
 	ideal_worker_state = 'False',
 	experiment_name = 'default',
 	trial_index = '-1',
-	num_learners = len(task_names)
+	num_learners = str(len(task_names))
 )
 
 def overwrite(a, b):
@@ -61,16 +61,16 @@ def overwrite(a, b):
 args = overwrite(args, default_arguements)
 
 # this is where results will be recorded
-result_folder = './results/Sep_1_meeting'
+result_folder = './results/Sep_15_meeting'
 
-state_dist = None
+state_dist_name = None
 
 if args.ideal_worker_state == 'True':
-	state_dist = 'ideal'
+	state_dist_name = 'ideal'
 else:
-	state_dist = 'uncertain'
+	state_dist_name = 'uncertain'
 
-result_file = args.data_allocation_regime+'_'+state_dist+'_'+args.num_learners+'_'+args.experiment_name+'_'+args.trial_index+'.json'
+result_file = args.data_allocation_regime+'_'+state_dist_name+'_'+args.num_learners+'_'+args.experiment_name+'_'+args.trial_index+'.json'
 result_file_path = path_join(result_folder, result_file)
 
 # this is the dict where metrics will be recorded for each training run
@@ -164,6 +164,31 @@ def initialize_parameters(num_learners):
 
 	return worker_prices, state_distributions
 
+# returns a boolean value of weather or not there's an active worker at the given IP
+async def test_ip(ip):
+	try:
+		handle = axon.client.RemoteWorker(ip)
+		await handle.rpcs.get_benchmark_scores()
+		return True
+
+	except(BaseException):
+		return False
+
+async def get_active_learners(learner_ips):
+	test_coros = []
+
+	for ip in learner_ips:
+		test_coros.append(test_ip(ip))
+
+	test_results = await asyncio.gather(*test_coros)
+
+	active_ips = []
+	for i, ip in enumerate(learner_ips):
+		if test_results[i]:
+			active_ips.append(ip)
+
+	return active_ips
+
 async def main():
 	# resets the parameter server from the last training run
 	clear_promises = []
@@ -177,9 +202,18 @@ async def main():
 	# the number of learners used in this trial, from command line arguement
 	num_learners = int(args.num_learners)
 
-	# sorting learner_ips in order of the last digit, this ensures that we always select the same learners on multiple runs
-	learner_ip_sort_key = lambda ip : int(ip.split('.')[-1])
-	learner_ips.sort(key=learner_ip_sort_key)
+	# we now filter out the IPs that are unresponsive
+	learner_ips = await get_active_learners(learner_ips)
+
+	if (len(learner_ips) < num_learners):
+		raise(BaseException(f'{num_learners} learners requested but only {len(learner_ips)} are available'))
+
+	# sorting learner_ips in order of the last digit
+	# learner_ip_sort_key = lambda ip : int(ip.split('.')[-1])
+	# learner_ips.sort(key=learner_ip_sort_key)
+
+	# shuffling learners
+	random.shuffle(learner_ips)
 
 	# selecting only the specified number of learners
 	learner_ips = learner_ips[0:num_learners]
@@ -197,7 +231,7 @@ async def main():
 
 	# getting the random parameters for this trials
 	worker_prices, state_distributions = initialize_parameters(num_learners)
-	print(state_distributions)
+	# print(state_distributions)
 
 	# the variables set by the optimization formulations
 	association, allocation, iterations, EOL = None, None, None, None
@@ -205,16 +239,18 @@ async def main():
 	# try allocating a number of times, should mitigate 0 solution counts
 	for i in range(num_retries):
 		try:
-
 			if (args.data_allocation_regime == 'EOL'):
 				association, allocation, iterations, EOL = EOL_prime(benchmark_scores, worker_prices, state_distributions)
 				# association, allocation, iterations, EOL = EOL_minmax(benchmark_scores, worker_prices, state_distributions)
 
 			elif (args.data_allocation_regime == 'TT'):
-				association, allocation, iterations, EOL = RSS(benchmark_scores, worker_prices)
+				association, allocation, iterations, EOL = RSS(benchmark_scores, worker_prices, state_distributions)
 
-			elif (args.data_allocation_regime == 'EOL_max'):
-				association, allocation, iterations, EOL = EOL_minmax(benchmark_scores, worker_prices, state_distributions)
+			elif (args.data_allocation_regime == 'MED'):
+				association, allocation, iterations, EOL = MED(benchmark_scores, worker_prices, state_distributions)
+
+			elif (args.data_allocation_regime == 'MMTT'):
+				association, allocation, iterations, EOL = MMTT(benchmark_scores, worker_prices, state_distributions)
 
 			else:
 				raise(BaseException('unrecognized data_allocation_regime'))
@@ -232,8 +268,6 @@ async def main():
 	print(worker_prices)
 	print(iterations)
 	print(EOL)
-
-	# exit()
 
 	# if the optimization calculation fails, there's no need to proceed past this point
 	if (association == None):

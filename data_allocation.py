@@ -13,6 +13,8 @@ from copy import copy
 from optimizers.RSS_formulation import run_model as RSS_model
 from optimizers.EOL_prime import run_model as EOL_prime_model
 from optimizers.EOL_minmax import run_model as EOL_minmax_model
+from optimizers.MED_formulation import run_model as MED_model
+from optimizers.MMTT import run_model as MMTT_model
 
 task_names = [task_name for task_name in tasks]
 
@@ -144,7 +146,7 @@ def EOL_minmax(benchmark_scores, worker_prices, state_probabilities):
 
 	return association, allocation, iterations, EOL
 
-def EOL_minmax(benchmark_scores, worker_prices, state_probabilities):
+def MED(benchmark_scores, worker_prices, state_probabilities):
 	worker_prices = copy(worker_prices)
 
 	learner_objs = []
@@ -182,7 +184,7 @@ def EOL_minmax(benchmark_scores, worker_prices, state_probabilities):
 	print('performing optimization calculation')
 	# returns the learner/orchestrator association as a one-hot matrix, and the data allocated to each learner as a matrix as well
 	# the first index iterates accross requesters, the second accross workers
-	x, d, EOL = EOL_minmax_model(learner_objs, task_objs, state_probabilities)
+	x, d, total_expected_delay = MED_model(learner_objs, task_objs, state_probabilities)
 
 	# We need to iterate over a 2D binary list across tasks and then workers. 
 	# We need to create a 1D list accross workers that holds the index of the task they're associated with 
@@ -206,19 +208,22 @@ def EOL_minmax(benchmark_scores, worker_prices, state_probabilities):
 	# the number of learning iterations each learner is to perform
 	iterations = [task_objs[i].num_iters for i in task_indices]
 
-	return association, allocation, iterations, EOL
+	return association, allocation, iterations, total_expected_delay
 
-def RSS(benchmark_scores, worker_prices):
+def RSS(benchmark_scores, worker_prices, state_distributions):
 	worker_prices = copy(worker_prices)
 
 	learner_objs = []
-	for learner_scores in benchmark_scores:
+	# this loop iterates over learners
+	for i, learner_scores in enumerate(benchmark_scores):
 		# learner_scores is a map from from (task, state) names to (training_rate_bps, data_time_spb, param_time_spb) tuples
 
 		# samples benchmarks from a random state
 		# *PARAMETER*
-		state = random.choice(state_names)
+		# state = random.choice(state_names)
 		# state = 'idle'
+
+		state = random.choices(state_names, weights=state_distributions[i], k=1).pop()
 
 		compute_benchmarks = {task_names.index(task) : learner_scores[(task, state)][0] for task in task_names}
 		data_times = {task_names.index(task) : learner_scores[(task, state)][1] for task in task_names}
@@ -252,6 +257,78 @@ def RSS(benchmark_scores, worker_prices):
 	# returns the learner/orchestrator association as a one-hot matrix, and the data allocated to each learner as a matrix as well
 	# the first index iterates accross requesters, the second accross workers
 	x, d = RSS_model(learner_objs, task_objs)
+
+	# We need to iterate over a 2D binary list across tasks and then workers. 
+	# We need to create a 1D list accross workers that holds the index of the task they're associated with 
+
+	num_tasks = len(x)
+	num_workers = len(x[0])
+
+	# indexes over workers and gives the index of the task they're assigned
+	task_indices = [0]*num_workers
+
+	for i in range(num_tasks):
+		for j in range(num_workers):
+			if (x[i][j] == 1.0):
+				task_indices[j] = i
+
+	association = [task_names[i] for i in task_indices]
+
+	# the amount of data allocated to each learner
+	allocation = torch.tensor(d).sum(dim=0).tolist()
+
+	# the number of learning iterations each learner is to perform
+	iterations = [task_objs[i].num_iters for i in task_indices]
+
+	return association, allocation, iterations, 0
+
+def MMTT(benchmark_scores, worker_prices, state_distributions):
+	worker_prices = copy(worker_prices)
+
+	learner_objs = []
+	# this loop iterates over learners
+	for i, learner_scores in enumerate(benchmark_scores):
+		# learner_scores is a map from from (task, state) names to (training_rate_bps, data_time_spb, param_time_spb) tuples
+
+		# samples benchmarks from a random state
+		# *PARAMETER*
+		# state = random.choice(state_names)
+		# state = 'idle'
+
+		state = random.choices(state_names, weights=state_distributions[i], k=1).pop()
+
+		compute_benchmarks = {task_names.index(task) : learner_scores[(task, state)][0] for task in task_names}
+		data_times = {task_names.index(task) : learner_scores[(task, state)][1] for task in task_names}
+		param_times = {task_names.index(task) : learner_scores[(task, state)][2] for task in task_names}
+
+		learner_obj = SimpleNamespace(**{
+			'price': worker_prices.pop(),
+			'kappa': 1,
+			'training_rates': compute_benchmarks,
+			'data_times': data_times,
+			'param_times': param_times
+		})
+
+		learner_objs.append(learner_obj)
+
+	task_objs = []
+	for task_name in tasks:
+
+		task = tasks[task_name]
+
+		# number of learning iterations, training deadline, data floor, budget
+		task_obj = SimpleNamespace(**{
+			'num_iters': task['num_training_iters'] ,
+			'deadline': task['deadline'],
+			'dataset_size': task['dataset_size'],
+		})
+
+		task_objs.append(task_obj)
+
+	print('performing optimization calculation')
+	# returns the learner/orchestrator association as a one-hot matrix, and the data allocated to each learner as a matrix as well
+	# the first index iterates accross requesters, the second accross workers
+	x, d = MMTT_model(learner_objs, task_objs)
 
 	# We need to iterate over a 2D binary list across tasks and then workers. 
 	# We need to create a 1D list accross workers that holds the index of the task they're associated with 

@@ -3,9 +3,11 @@
 import torch
 import numpy as np
 from matplotlib import pyplot as plt
-from keras.datasets import mnist
 from tqdm import tqdm
 import random
+
+from keras.datasets import mnist
+from data.fashion_data import train_images, train_labels, test_images, test_labels
 
 from networks import FashionNet, TwoNN
 model_class = FashionNet
@@ -13,15 +15,16 @@ model_class = FashionNet
 print('starting')
 
 criterion = torch.nn.CrossEntropyLoss()
+num_samples = 10_000
 
 # this size of batches during testing
 TEST_BATCH_SIZE = 32
 # the size of batches during client updates
-B = 10
-# number of iid data samples assigned to each client
-n_k = 6000
+B = 32
 # number of clients
-K = 10
+K = 9
+# number of iid data samples assigned to each client
+n_k = num_samples // K
 # the number of passes over their data set that each client makes
 E = 1
 # fraction of clients queried per communication round
@@ -36,16 +39,10 @@ device = 'cuda:0'
 print('importing data')
 raw_data = mnist.load_data()
 
-x_train_raw = raw_data[0][0]
-y_train_raw = raw_data[0][1]
-x_test_raw = raw_data[1][0]
-y_test_raw = raw_data[1][1]
-
-x_train = torch.tensor(x_train_raw, dtype=torch.float32).reshape([-1, 1, 28, 28])/255
-x_test = torch.tensor(x_test_raw, dtype=torch.float32).reshape([-1, 1, 28, 28])/255
-
-y_train = torch.tensor(y_train_raw, dtype=torch.long)
-y_test = torch.tensor(y_test_raw, dtype=torch.long)
+x_train = train_images
+x_test = test_images
+y_train = train_labels
+y_test = test_labels
 
 # calculates the accuracy score of a prediction y_hat and the ground truth y
 I = torch.eye(10,10)
@@ -164,7 +161,7 @@ for i in range(K):
 
 	clients.append(client_dict)
 
-num_global_updates = 500
+num_global_updates = 5
 for i in range(num_global_updates):
 	print('--------------------------------------------------------------------------------')
 	print('global training cycle', i+1)

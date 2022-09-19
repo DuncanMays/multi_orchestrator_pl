@@ -104,19 +104,20 @@ def run_model(workers, requesters, state_probabilities):
 
 	m_prime.optimize()
 
-	association = get_2D_list(num_requesters, num_workers)
-	allocation = get_2D_list(num_requesters, num_workers)
+	print('----------------------------------', num_state_combinations)
+	# exit()
 
-	for s in range(10):
-		for (i, j) in rw_combinations:
+	# association = get_2D_list(num_requesters, num_workers)
+	# allocation = get_2D_list(num_requesters, num_workers)
 
-			# association[i][j] = x_prime[i][j][s].X
-			allocation[i][j] = d_prime[i][j][s].X
+	# for s in range(10):
+	# 	for (i, j) in rw_combinations:
 
-		# print(association)
-		print(allocation)
+	# 		# association[i][j] = x_prime[i][j][s].X
+	# 		allocation[i][j] = d_prime[i][j][s].X
 
-	exit()
+	# 	# print(association)
+	# 	print(allocation)
 
 	# we now define contraints for the main formulation
 
@@ -193,6 +194,9 @@ def run_model(workers, requesters, state_probabilities):
 	EOL_objective = gurobi.quicksum([ sc_probability(state_combinations[s])*(c[r][s] - c_prime[r][s].X)
 		for r, s in rs_combinations])
 
+	# EMD_objective = gurobi.quicksum([ sc_probability(state_combinations[s])*(c[r][s]) for r, s in rs_combinations])
+
+	# m.setObjective(EMD_objective, GRB.MINIMIZE)
 	m.setObjective(EOL_objective, GRB.MINIMIZE)
 
 	m.optimize()

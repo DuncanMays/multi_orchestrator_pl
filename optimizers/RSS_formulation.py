@@ -86,6 +86,7 @@ def run_model(workers, requesters):
 
 	# constrains 7 and 8, that the data assignment must be integral, and x must be binary, is implicit in the variable declarations above
 
+	# solves the model
 	m.optimize()
 
 	association = get_2D_list(num_requesters, num_workers)

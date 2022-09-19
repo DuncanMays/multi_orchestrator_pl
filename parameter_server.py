@@ -115,7 +115,7 @@ def assess_parameters(task_name, num_shards):
 
 	x_shards, y_shards = get_testing_data(task_name, num_shards)
 
-	x_test = x_shards.reshape([x_shards.shape[0]*x_shards.shape[1]]+task_description['data_shape'])
+	x_test = x_shards.reshape([x_shards.shape[0]*x_shards.shape[1]]+task_description['data_shape'])/255
 	y_test = y_shards.reshape([y_shards.shape[0]*y_shards.shape[1]])
 
 	num_test_batches = x_test.shape[0]//BATCH_SIZE

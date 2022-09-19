@@ -83,7 +83,7 @@ def run_model(workers, requesters, state_probabilities):
 	# x being one means d is greater than zero
 	m_prime.addConstrs(( (x_prime[r][w][s] == 1) >> (d_prime[r][w][s] >= 1) for (r, w, s) in rws_combinations ), 'i2_prime')
 	# c1 means the time delay must not exceed the deadline of requester
-	m_prime.addConstrs((delay_prime(r, w, s) <= requesters[r].T for (r, w, s) in rws_combinations) , 'c1_prime')
+	# m_prime.addConstrs((delay_prime(r, w, s) <= requesters[r].T for (r, w, s) in rws_combinations) , 'c1_prime')
 	# means that the total number of data shards assigned from a requester must equal some integer
 	m_prime.addConstrs(( sum([ d_prime[r][w][s] for w in range(num_workers) ]) == requesters[r].dataset_size for (r, s) in rs_combinations), 'c3_prime')
 	# means that the total cost of assignment for a requester in each state may not exceed their budget
