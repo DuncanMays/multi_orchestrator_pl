@@ -36,14 +36,15 @@ task_names = [task_name for task_name in tasks]
 state_names = [state_name for state_name in state_dicts]
 parameter_server = get_parameter_server()
 
-heat_param = 0.5
+# heat_param = 0.5
 
 default_arguements = SimpleNamespace(
-	data_allocation_regime = 'EOL',
-	ideal_worker_state = 'False',
+	data_allocation_regime = 'MED',
+	state_distribution = 'uncertain',
 	experiment_name = 'default',
 	trial_index = '-1',
-	num_learners = str(len(task_names))
+	num_learners = str(9),
+	heat = str(0.5)
 )
 
 def overwrite(a, b):
@@ -61,16 +62,9 @@ def overwrite(a, b):
 args = overwrite(args, default_arguements)
 
 # this is where results will be recorded
-result_folder = './results/Sep_15_meeting'
+result_folder = './results/Oct_8_meeting'
 
-state_dist_name = None
-
-if args.ideal_worker_state == 'True':
-	state_dist_name = 'ideal'
-else:
-	state_dist_name = 'uncertain'
-
-result_file = args.data_allocation_regime+'_'+state_dist_name+'_'+args.num_learners+'_'+args.experiment_name+'_'+args.trial_index+'.json'
+result_file = args.data_allocation_regime+'_'+args.state_distribution+'_'+args.heat+'_'+args.experiment_name+'_'+args.trial_index+'.json'
 result_file_path = path_join(result_folder, result_file)
 
 # this is the dict where metrics will be recorded for each training run
@@ -85,11 +79,6 @@ results = {
 	'cost': 0,
 	'EOL': 0,
 }
-
-def create_state_distribution(heat):
-	# this is the distribution that controls how workers change states
-	d = torch.softmax(torch.randint(0, 2, (len(state_names), ))/heat, dim=0).tolist()
-	return d
 
 def record_results(file_path):
 	try:
@@ -142,10 +131,18 @@ async def training_routine(task_name, cluster_handle, num_training_cycles):
 		training_metrics[task_name].append(data_point)
 
 # the ideal state distribution
-get_idle_dist = lambda : [sum([i == 0]) for i in range(len(state_names))]
+get_idle_dist = lambda : [float(sum([i == 0])) for i in range(len(state_names))]
+
+# a one-hot state distribution
+get_one_hot = lambda i : [float(sum([j == i])) for j in range(len(state_names))]
 
 # samples a normal distribution to obtain worker prices
 get_random_price = lambda : min(max(random.gauss(config.worker_price_mean, config.worker_price_variance), config.worker_price_min), config.worker_price_max)
+
+def create_state_distribution(heat):
+	# this is the distribution that controls how workers change states
+	d = torch.softmax(torch.tensor(get_one_hot(random.randint(0, len(state_names)-1)))/heat, dim=0).tolist()
+	return d
 
 # this function sets all the values that vary in between experiments, given the same set of workers between experiments
 # the two peices of information that change are the worker state distributions and the worker prices, both of which are returned by this function
@@ -154,13 +151,24 @@ def initialize_parameters(num_learners):
 
 	state_distributions = None
 
-	if args.ideal_worker_state == 'True':
+	if args.state_distribution == 'ideal':
 		# state distributions are ideal
 		state_distributions = [get_idle_dist() for i in range(num_learners)]
 
-	else:
+	elif args.state_distribution == 'uncertain':
 		# randomly setting the state distributions of each worker, based on heat parameter
-		state_distributions = [create_state_distribution(heat_param) for _ in range(num_learners)]
+		state_distributions = [create_state_distribution(float(args.heat)) for _ in range(num_learners)]
+
+	elif args.state_distribution == 'static':
+		# sampling from randomly set state distributions
+		prime_state_dists = [create_state_distribution(float(args.heat)) for _ in range(num_learners)]
+		# the state distribution that's sent to learners will be a one-hot vector representing the state selected from the distribution initialized above
+		# this will mean the worker's state is constant, or static
+		states = [random.choices(range(len(state_names)), weights=state_dist, k=1).pop() for state_dist in prime_state_dists]
+		state_distributions = [get_one_hot(s) for s in states]
+
+	else:
+		raise BaseException('unknown state_distribution: ', args.state_distribution)
 
 	return worker_prices, state_distributions
 
@@ -239,14 +247,7 @@ async def main():
 	# try allocating a number of times, should mitigate 0 solution counts
 	for i in range(num_retries):
 		try:
-			if (args.data_allocation_regime == 'EOL'):
-				association, allocation, iterations, EOL = EOL_prime(benchmark_scores, worker_prices, state_distributions)
-				# association, allocation, iterations, EOL = EOL_minmax(benchmark_scores, worker_prices, state_distributions)
-
-			elif (args.data_allocation_regime == 'TT'):
-				association, allocation, iterations, EOL = RSS(benchmark_scores, worker_prices, state_distributions)
-
-			elif (args.data_allocation_regime == 'MED'):
+			if (args.data_allocation_regime == 'MED'):
 				association, allocation, iterations, EOL = MED(benchmark_scores, worker_prices, state_distributions)
 
 			elif (args.data_allocation_regime == 'MMTT'):
@@ -267,7 +268,6 @@ async def main():
 	print(allocation)
 	print(worker_prices)
 	print(iterations)
-	print(EOL)
 
 	# if the optimization calculation fails, there's no need to proceed past this point
 	if (association == None):
@@ -306,7 +306,7 @@ async def main():
 	await asyncio.gather(*training_promises)
 
 	# records results to a file
-	record_results(result_file_path)
+	# record_results(result_file_path)
 
 if (__name__ == '__main__'):
 	asyncio.run(main())

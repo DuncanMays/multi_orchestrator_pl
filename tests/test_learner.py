@@ -24,11 +24,12 @@ def test_benchmark():
 
 def test_local_update():
 
-	learner.set_training_regime('fashion', incomming_num_shards=10)
+	learner.set_training_regime('fashion', incomming_num_shards=100)
 	
 	for state_name in allowed_states:
 		set_state(state_name)
-		learner.local_update()
+		t = learner.local_update()
+		print('predicted time for completion:', sum(t))
 
 def test_training_regime():
 	task_name = 'mnist_ffn'

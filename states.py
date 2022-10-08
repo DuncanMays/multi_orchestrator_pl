@@ -1,12 +1,9 @@
-from utils import get_parameter_server
 from config import config
 from threading import Thread, Lock
 
 import torch
 import time
 import random
-
-# ps = get_parameter_server()
 
 device = config.training_device
 

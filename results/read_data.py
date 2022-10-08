@@ -5,9 +5,9 @@ import os
 sys.path.append('..')
 from tasks import tasks
 
-target_dir = 'Sep_15_meeting'
+target_dir = 'Oct_8_meeting'
 
-metrics = ['resource_util', 'max_training_time', 'loss', 'acc', 'EOL', 'cost', 'total_training_time', 'training_time', 'sat_ratio']
+metrics = ['resource_util', 'max_training_time', 'loss', 'acc', 'EOL', 'cost', 'total_training_time', 'training_time', 'worker_sat_ratio', 'task_sat_ratio']
 task_names = list(tasks.keys())
 
 def get_empty_data_point():
@@ -45,12 +45,13 @@ def get_data(scheme, state_distribution, experiment_name, trial_number):
 	data_point['cost'] = raw_data['cost']
 
 	# averaging converged loss and acc accross tasks
-	data_point['loss'] = sum([raw_data['training_metrics'][task_name][-1]['loss'] for task_name in task_names])/len(task_names)
-	data_point['acc'] = sum([raw_data['training_metrics'][task_name][-1]['acc'] for task_name in task_names])/len(task_names)
+	data_point['loss'] = sum([raw_data['training_metrics'][task_name][-2]['loss'] for task_name in task_names])/len(task_names)
+	data_point['acc'] = sum([raw_data['training_metrics'][task_name][-2]['acc'] for task_name in task_names])/len(task_names)
 
 	avg_training_time = 0
 	avg_max_training_time = -1
-	avg_sat_ratio = 0
+	avg_task_sat_ratio = 0
+	avg_worker_sat_ratio = 0
 	avg_total_training_time = 0
 	avg_learner_util = 0
 
@@ -76,12 +77,13 @@ def get_data(scheme, state_distribution, experiment_name, trial_number):
 		avg_total_training_time += total_training_time
 
 		# the satisfaction ration is the number of workers who returned before the deadline
-		# satisfied_deadlines = sum([sum([t < tasks[task_name]['deadline'] for t in T]) for T in training_times])
-		# total_deadlines = sum([len(t) for t in training_times])
+		satisfied_deadlines = sum([sum([t < tasks[task_name]['deadline'] for t in T]) for T in training_times])
+		total_deadlines = sum([len(t) for t in training_times])
+		avg_worker_sat_ratio += satisfied_deadlines/total_deadlines
 
 		# adds a 1 or 0 depending if the task finished before the deadline this trial
 		if (total_training_time < len(training_times)*tasks[task_name]['deadline']):
-			avg_sat_ratio += 1
+			avg_task_sat_ratio += 1
 
 		# we now calculate the resource utilization using the max time of each GU cycle in the training run
 		learner_utils = [[t/max_times[i] for t in T] for i, T in enumerate(training_times)]
@@ -91,23 +93,24 @@ def get_data(scheme, state_distribution, experiment_name, trial_number):
 	data_point['training_time'] = avg_training_time/len(tasks)
 	data_point['max_training_time'] = avg_max_training_time/len(tasks)
 	data_point['total_training_time'] = avg_total_training_time/len(tasks)
-	data_point['sat_ratio'] = avg_sat_ratio/len(tasks)
+	data_point['worker_sat_ratio'] = avg_worker_sat_ratio/len(tasks)
+	data_point['task_sat_ratio'] = avg_task_sat_ratio/len(tasks)
 	data_point['resource_util'] = avg_learner_util/len(tasks)
 
-	if (scheme == 'MMTT' and state_distribution == 'uncertain' and experiment_name == '3_workers'):
-		# print('MMTT: ', end='')
-		# print(data_point['training_time'], data_point['max_training_time'])
-		MMTT = (MMTT*mmtt + data_point['training_time'])/(mmtt+1)
-		mmtt += 1
+	# if (scheme == 'MMTT' and state_distribution == 'uncertain' and experiment_name == '3_workers'):
+	# 	# print('MMTT: ', end='')
+	# 	# print(data_point['training_time'], data_point['max_training_time'])
+	# 	MMTT = (MMTT*mmtt + data_point['training_time'])/(mmtt+1)
+	# 	mmtt += 1
 
-	if (scheme == 'MED' and state_distribution == 'uncertain' and experiment_name == '3_workers'):
-		# print('MED: ', end='')
-		# print(data_point['training_time'], data_point['max_training_time'])
-		MED = (MED*med + data_point['training_time'])/(med+1)
-		med += 1
+	# if (scheme == 'MED' and state_distribution == 'uncertain' and experiment_name == '3_workers'):
+	# 	# print('MED: ', end='')
+	# 	# print(data_point['training_time'], data_point['max_training_time'])
+	# 	MED = (MED*med + data_point['training_time'])/(med+1)
+	# 	med += 1
 
-	print(MED)
-	print(MMTT)
+	# print(MED)
+	# print(MMTT)
 
 	return data_point
 

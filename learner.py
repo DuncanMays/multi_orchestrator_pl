@@ -97,9 +97,8 @@ def local_update():
 	start_time = time.time()
 	deadline = task_description['deadline']
 
-	# returns None, aborts the training loop if we're past the deadline
-	def check_deadline():
-		return (time.time() - start_time) > deadline
+	# returns True if the worker is past the deadline
+	check_deadline = lambda : (time.time() - start_time) > deadline
 
 	print(f'training {task_name} in state: {get_state()}')
 	print('downloading parameters')
@@ -141,6 +140,8 @@ def local_update():
 	# ratio of training loop that has been completed in the event that the training is cut short by the deadline
 	batches_completed = 0
 	training_start_time = time.time()
+	# boolean holding True if the worker exceeds its deadline while training
+	halted = False
 
 	# training the network
 	print('training')
@@ -168,32 +169,34 @@ def local_update():
 				if check_deadline():
 					# the number of batches completed in this epoch
 					batches_completed += batch_number + 1
-
+					# raises flag indicating halt
+					halted = True
 					# end the loop over batches
 					break
 
-		if check_deadline():
+		if halted:
 			# end the training loop over epochs
 			break
-
 		else:
+			# else increment completed batches counter
 			batches_completed += num_batches
 
 	# the amount of time spent training
 	training_time = time.time() - training_start_time
 
-	# marshalls the neural net's parameters
-	param_update = [p.to('cpu') for p in list(net.parameters())]
+	if not halted:
+		# marshalls the neural net's parameters
+		param_update = [p.to('cpu') for p in list(net.parameters())]
 
-	print('uploading parameters to PS')
-	if (state == 'downloading'):
-		stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
-		stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
+		print('uploading parameters to PS')
+		if (state == 'downloading'):
+			stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
+			stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
 
-	ps.rpcs.submit_update.sync_call((task_name, param_update, batches_completed, ), {})
+		ps.rpcs.submit_update.sync_call((task_name, param_update, batches_completed, ), {})
 
-	if (state == 'downloading'):
-		stressor_handle.join()
+		if (state == 'downloading'):
+			stressor_handle.join()
 
 	# calculates the time remaining
 	total_batches = num_iters*num_batches
@@ -221,8 +224,7 @@ if (__name__ == '__main__'):
 		buffer = f.read()
 		benchmark_scores = pickle.loads(buffer)
 
-	# starts stressor thread, this runs stressors that put the worker in different states
-	# stressor_thread.start()
+	
 
 	# sign into notice board, this is so that clients can discover this worker
 	axon.discovery.sign_in(ip=config.notice_board_ip)

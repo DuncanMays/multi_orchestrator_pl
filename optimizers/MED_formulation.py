@@ -104,7 +104,7 @@ def run_model(workers, requesters, state_probabilities):
 	# this constraint means that c[i][s_bar] is the maximal delay of all workers associated with task i for every given state tuple s_bar
 	m.addConstrs((expected_delay(r, w) <= c[r] for (r, w) in rw_combinations) , 'c1.0')
 	# c1 means the expected time delay must not exceed the deadline of requester i
-	m.addConstrs(( c[r] <= requesters[r].T for r in range(num_requesters) ), 'c1.1')
+	# m.addConstrs(( c[r] <= requesters[r].T for r in range(num_requesters) ), 'c1.1')
 
 	# c2 is an energy constraint
 	# c3 means that the total number of data shards assigned from a requester must equal some integer
