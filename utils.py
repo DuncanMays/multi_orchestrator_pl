@@ -16,19 +16,17 @@ def set_parameters(net, params):
 	for i, p in enumerate(params): 
 		current_params[i].data = p.data.clone()
 
-# this function averages parameters from workers, according to a weight
+# param_list is a list of lists of tensors
 def average_parameters(param_list, weights):
 
-	avg_params = []
+	# the length of each list of parameter tensors in param_list
+	param_len = len(param_list[0])
+	averaged_params = []
 
-	for i, params in enumerate(param_list):
+	for p_index in range(param_len):
+		param_tensors = [p[p_index] for p in param_list]
+		weighted_param_tensors = [p*weights[i] for i, p in enumerate(param_tensors)]
+		averaged_p = sum(weighted_param_tensors)
+		averaged_params.append(averaged_p)
 
-		if (i == 0):
-			for p in params:
-				avg_params.append(p.clone()*weights[i])
-
-		else:
-			for j, p in enumerate(params):
-				avg_params[j].data += p.data*weights[i]
-
-	return avg_params
+	return averaged_params

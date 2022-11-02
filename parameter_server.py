@@ -15,6 +15,10 @@ if torch.cuda.is_available():
 data_map = {'mnist_ffn': (flat_x_train, y_train), 'mnist_cnn': (img_x_train, y_train), 'fashion': (fashion_train_images, fashion_train_labels)}
 test_data_map = {'mnist_ffn': (flat_x_test, y_test), 'mnist_cnn': (img_x_test, y_test), 'fashion': (fashion_test_images, fashion_test_labels)}
 
+# data_map = {'mnist_cnn_0': (img_x_train, y_train), 'mnist_cnn_1': (img_x_train, y_train), 'mnist_cnn_2': (img_x_train, y_train), 'mnist_cnn_3': (img_x_train, y_train), 'mnist_cnn_4': (img_x_train, y_train),}
+# test_data_map = {'mnist_cnn_0': (img_x_test, y_test), 'mnist_cnn_1': (img_x_test, y_test), 'mnist_cnn_2': (img_x_test, y_test), 'mnist_cnn_3': (img_x_test, y_test), 'mnist_cnn_4': (img_x_test, y_test),}
+
+
 model_map = {}
 for task_name in tasks:
 	model_map[task_name] = tasks[task_name]['network_architecture']()
@@ -80,6 +84,16 @@ def submit_update(task_name, parameters, num_shards):
 
 	update_map[task_name].append(update_obj)
 
+# returns the 2-norm of 2 tensors of the same shape
+def square_distance(a, b):
+	c = a-b
+	return torch.sum(c*c)
+
+def parameter_norm(a, b):
+	param_pairs = [(a[i], b[i]) for i in range(len(a))]
+	param_squares = [square_distance(*t) for t in param_pairs]
+	return torch.sqrt(sum(param_squares)).item()
+
 @axon.worker.rpc()
 def aggregate_parameters(task_name):
 	# where updates submitted by learners are stored
@@ -92,7 +106,7 @@ def aggregate_parameters(task_name):
 
 	# if there haven't been any updates, this will leave the model parameters as they are and prevent the call crashing
 	if (len(params) == 0):
-		return
+		return None, None
 
 	# normalizing weights
 	w_sum = sum(weights)
@@ -100,13 +114,21 @@ def aggregate_parameters(task_name):
 
 	aggregate_parameters = average_parameters(params, weights)
 
-	net = model_map[task_name]
+	# we now calculate the parameter divergence for each update
+	param_divs = []
+	for param in params:
+		div = parameter_norm(aggregate_parameters, param)
+		param_divs.append(div)
 
+	# setting the parameters that are served to learners
+	net = model_map[task_name]
 	set_parameters(net, aggregate_parameters)
 
 	# clears the update list
 	update_map[task_name] = []
 
+	# reports the max and mean parameter divergence back to the caller
+	return max(param_divs), sum(param_divs)/len(param_divs)
 
 @axon.worker.rpc()
 def assess_parameters(task_name, num_shards):

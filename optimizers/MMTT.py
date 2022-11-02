@@ -3,6 +3,7 @@ from itertools import product
 
 from states import state_dicts
 from tasks import tasks, global_budget
+from optimizers.list_utils import get_multilist
 
 task_names = [name for name in tasks]
 state_names = [name for name in state_dicts]
@@ -21,7 +22,7 @@ def run_model(workers, requesters):
 	# ? some sort of configuration object?
 	GRB = gurobi.GRB()
 	# the model
-	m = gurobi.Model('multi-requester setup')
+	m = gurobi.Model('MMTT multi-requester setup')
 	m.setParam(GRB.Param.OutputFlag, 0)
 
 	num_workers = len(workers)
@@ -38,6 +39,7 @@ def run_model(workers, requesters):
 
 	# the enumeration of indices of workers and requesters
 	combinations = list(product(range(num_requesters), range(num_workers)))
+	rw_combinations = list(product(range(num_requesters), range(num_workers)))
 
 	for (i, j) in combinations:
 		# worker/requester associations
@@ -72,7 +74,7 @@ def run_model(workers, requesters):
 
 	# c1 means the time delay must not exceed the deadline of requester i
 	m.addConstrs((delay(i, j) <= c[i] for (i, j) in combinations) , 'c1.0')
-	# m.addConstrs((c[i] <= requesters[i].deadline for i in range(num_requesters)) , 'c1.1')
+	m.addConstrs((c[i] <= requesters[i].deadline for i in range(num_requesters)) , 'c1.1')
 
 	# c2 is an energy constraint
 
@@ -93,8 +95,8 @@ def run_model(workers, requesters):
 	# solves the model
 	m.optimize()
 
-	association = get_2D_list(num_requesters, num_workers)
-	allocation = get_2D_list(num_requesters, num_workers)
+	association_2D = get_2D_list(num_requesters, num_workers)
+	allocation_2D = get_2D_list(num_requesters, num_workers)
 
 	for (i, j) in combinations:
 
@@ -102,7 +104,27 @@ def run_model(workers, requesters):
 		# if (x[i][j].X == 1):
 		# 	print(f'worker: {j} got: {d[i][j].X} data slices from requester {i}')
 
-		association[i][j] = x[i][j].X
-		allocation[i][j] = d[i][j].X
+		association_2D[i][j] = x[i][j].X
+		allocation_2D[i][j] = d[i][j].X
 
-	return association, allocation
+	# indexes over workers and gives the index of the task they're assigned
+	task_indices = [0]*num_workers
+
+	for i in range(len(task_names)):
+		for j in range(num_workers):
+			if (association_2D[i][j] == 1.0):
+				task_indices[j] = i
+
+	association = [task_names[i] for i in task_indices]
+
+	# allocation_2D goes over requesters then workers, we want it to go over workers, so that we can lookup from task_indices in each row to get the number of samples for that worker
+	allocation_2D_T = [[allocation_2D[i][j] for i in range(num_requesters)] for j in range(num_workers)]
+	allocation = [allocation_2D_T[i][task_indices[i]] for i in range(num_workers)]
+
+	ed = get_multilist([num_workers, num_requesters])
+	for (r, w) in rw_combinations:
+		ed[w][r] = delay(r, w).getValue()
+
+	time_predictions = [ed[i][task_indices[i]] for i in range(num_workers)]
+
+	return association, allocation, time_predictions

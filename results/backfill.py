@@ -3,7 +3,7 @@ import sys
 
 from itertools import product
 
-target_dir = 'Oct_8_meeting'
+target_dir = 'Oct_20_meeting_2'
 
 # return a boolean indicating if a file exists at the given path
 def test_file(filepath):
@@ -21,15 +21,15 @@ def test_file(filepath):
 def get_command_list():
 
 	command_list = []
-	trial_indices = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
-	heat_params = [0.0001, 0.5, 1.0, 1.5, 2.0]
+	trial_indices = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+	num_workers = [3, 5, 7, 9]
 	scheme_state_prefix = ['MED_uncertain', 'MMTT_uncertain', 'MMTT_ideal']
 	# scheme_state_prefix = ['MMTT_static']
-	experiment_name = 'heat_param'
+	experiment_name = 'Num_workers'
 
-	for (prefix, hp, t) in product(scheme_state_prefix, heat_params, trial_indices):
+	for (prefix, nw, t) in product(scheme_state_prefix, num_workers, trial_indices):
 
-		file_name = prefix + "_" + str(hp) + "_" + experiment_name + "_" + str(t) + '.json'
+		file_name = prefix + "_" + str(nw) + "_" + experiment_name + "_" + str(t) + '.json'
 		file_path = os.path.join(target_dir, file_name)
 
 		if not test_file(file_path):
@@ -39,7 +39,7 @@ def get_command_list():
 
 			dar, wrkr_dst = prefix.split('_')
 
-			command = 'python orchestrator.py -data_allocation_regime '+dar+' -state_distribution '+wrkr_dst+' -heat '+str(hp)+' -trial_index '+str(t)+' -experiment_name heat_param'
+			command = 'python orchestrator.py -data_allocation_regime '+dar+' -state_distribution '+wrkr_dst+' -num_learners '+str(nw)+' -trial_index '+str(t)+' -experiment_name heat_param'
 			command_list.append(command)
 
 	return command_list

@@ -28,6 +28,7 @@ num_shards = config.delta
 num_iters = 1
 device = config.training_device
 check_deadline_interval = 10
+deadline = config.default_deadline
 
 # holds the learner's benchmark scores once they're read from disk
 benchmark_scores = {}
@@ -61,10 +62,11 @@ def set_training_regime(
 		incoming_task_name=config.default_task_name,
 		incomming_num_shards=config.delta,
 		incomming_num_iters=1,
-		check_deadline_every=10
+		check_deadline_every=10,
+		incoming_deadline=config.default_deadline
 	):
 
-	global task_name, num_shards, num_iters, check_deadline_interval
+	global task_name, num_shards, num_iters, check_deadline_interval, deadline
 
 	print('set training regime')
 	print(incoming_task_name)
@@ -73,6 +75,7 @@ def set_training_regime(
 	num_shards = incomming_num_shards
 	num_iters = incomming_num_iters
 	check_deadline_interval = check_deadline_every
+	deadline = incoming_deadline
 
 @axon.worker.rpc()
 def get_data_allocated():
@@ -86,7 +89,7 @@ training_stressor_size = 900
 def local_update():
 	print('performing local update routine')
 
-	global device, task_name, num_shards, num_iters, check_deadline_interval
+	global device, task_name, num_shards, num_iters, check_deadline_interval, deadline
 
 	task_description = tasks[task_name]
 	print(task_name)
@@ -95,7 +98,6 @@ def local_update():
 	state_desc = state_dicts[state]
 	stressor_handle = None
 	start_time = time.time()
-	deadline = task_description['deadline']
 
 	# returns True if the worker is past the deadline
 	check_deadline = lambda : (time.time() - start_time) > deadline
@@ -144,7 +146,7 @@ def local_update():
 	halted = False
 
 	# training the network
-	print('training')
+	print('training, deadline is ', deadline)
 	for i in range(num_iters):
 		print(f'iteration {i+1} of {num_iters}')
 		for batch_number in tqdm(range(num_batches)):
@@ -184,19 +186,18 @@ def local_update():
 	# the amount of time spent training
 	training_time = time.time() - training_start_time
 
-	if not halted:
-		# marshalls the neural net's parameters
-		param_update = [p.to('cpu') for p in list(net.parameters())]
+	# marshalls the neural net's parameters
+	param_update = [p.to('cpu') for p in list(net.parameters())]
 
-		print('uploading parameters to PS')
-		if (state == 'downloading'):
-			stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
-			stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
+	print('uploading parameters to PS')
+	if (state == 'downloading'):
+		stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
+		stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
 
-		ps.rpcs.submit_update.sync_call((task_name, param_update, batches_completed, ), {})
+	ps.rpcs.submit_update.sync_call((task_name, param_update, batches_completed, ), {})
 
-		if (state == 'downloading'):
-			stressor_handle.join()
+	if (state == 'downloading'):
+		stressor_handle.join()
 
 	# calculates the time remaining
 	total_batches = num_iters*num_batches

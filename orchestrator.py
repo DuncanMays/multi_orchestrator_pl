@@ -1,3 +1,4 @@
+from tasks import tasks, global_budget
 import axon
 import asyncio
 import random
@@ -6,11 +7,11 @@ import time
 import torch
 from sys import argv as arg_list
 from os.path import join as path_join
+from itertools import product
 
-from tasks import tasks, global_budget
 from states import state_dicts
 from config import config
-from data_allocation import EOL_prime, RSS, MED, MMTT
+from data_allocation import MED, MMTT
 from worker_composite import WorkerComposite
 from utils import get_parameter_server
 from types import SimpleNamespace
@@ -36,15 +37,15 @@ task_names = [task_name for task_name in tasks]
 state_names = [state_name for state_name in state_dicts]
 parameter_server = get_parameter_server()
 
-# heat_param = 0.5
-
 default_arguements = SimpleNamespace(
 	data_allocation_regime = 'MED',
 	state_distribution = 'uncertain',
 	experiment_name = 'default',
 	trial_index = '-1',
 	num_learners = str(9),
-	heat = str(0.5)
+	heat = str(0.5),
+	num_tasks = len(task_names),
+	deadline_adjust = 0
 )
 
 def overwrite(a, b):
@@ -62,22 +63,21 @@ def overwrite(a, b):
 args = overwrite(args, default_arguements)
 
 # this is where results will be recorded
-result_folder = './results/Oct_8_meeting'
+result_folder = './results/Nov_1_meeting/'
 
-result_file = args.data_allocation_regime+'_'+args.state_distribution+'_'+args.heat+'_'+args.experiment_name+'_'+args.trial_index+'.json'
+result_file = args.data_allocation_regime+'_'+args.state_distribution+'_'+str(args.deadline_adjust)+'_'+args.experiment_name+'_'+args.trial_index+'.json'
 result_file_path = path_join(result_folder, result_file)
 
 # this is the dict where metrics will be recorded for each training run
 # each task_name corresponds to a list of data points, each data point representing a global update cycle
 # each data point holds: the time that the cycle took, and the loss and acc
-# data_point = {time, acc, loss, sat_ratio, cost}
 training_metrics = {task_name: [] for task_name in task_names}
 
 # this is the object that will be saved for each training run
 results = {
 	'training_metrics': training_metrics,
 	'cost': 0,
-	'EOL': 0,
+	'time_prediction': 0,
 }
 
 def record_results(file_path):
@@ -105,7 +105,7 @@ async def training_routine(task_name, cluster_handle, num_training_cycles):
 	# times holds a list of the amount of time it was projected that each update should have taken on each worker
 	# loss and acc hold the loss and accuracy of the aggregated neural network
 	# cost holds the total price of assignment
-	data_point = {'times': [], 'acc': acc, 'loss': loss}
+	data_point = {'times': [], 'acc': acc, 'loss': loss, 'max_div': 0, 'mean_div': 0}
 
 	training_metrics[task_name].append(data_point)
 
@@ -117,24 +117,27 @@ async def training_routine(task_name, cluster_handle, num_training_cycles):
 		# performs the local training routine on each worker on the task
 		timings = await cluster_handle.rpcs.local_update()
 		# local_update returns a 2-tuple of the amount of time it took to complete the update and then the extra time it should have taken if the update wasn't cut short by the deadline
-		timings = [sum(t) for t in timings]
+		timings = [t[0] for t in timings]
 
 		# aggregating parameters
-		await parameter_server.rpcs.aggregate_parameters(task_name)
+		max_div, mean_div = await parameter_server.rpcs.aggregate_parameters(task_name)
 
 		# assessing parameters
 		loss, acc = await parameter_server.rpcs.assess_parameters(task_name, testing_shards)
 		print(f'cycle completed on {task_name}, loss and accuracy: {loss, acc}')
 
 		# recording results
-		data_point = {'times': timings, 'acc': acc, 'loss': loss}
+		data_point = {'times': timings, 'acc': acc, 'loss': loss, 'max_div': max_div, 'mean_div': mean_div}
 		training_metrics[task_name].append(data_point)
 
 # the ideal state distribution
 get_idle_dist = lambda : [float(sum([i == 0])) for i in range(len(state_names))]
 
-# a one-hot state distribution
+# a one-hot vector
 get_one_hot = lambda i : [float(sum([j == i])) for j in range(len(state_names))]
+
+# a random vector
+get_rand_vec = lambda : [random.uniform(0, 1) for j in range(len(state_names))]
 
 # samples a normal distribution to obtain worker prices
 get_random_price = lambda : min(max(random.gauss(config.worker_price_mean, config.worker_price_variance), config.worker_price_min), config.worker_price_max)
@@ -197,6 +200,14 @@ async def get_active_learners(learner_ips):
 
 	return active_ips
 
+def multiple_mnist_cnn(learner_scores):
+	new_learner_scores = {}
+
+	for i, state in product(range(5), state_names):
+		new_learner_scores[('mnist_cnn_'+str(i), state)] = learner_scores[('mnist_cnn', state)]
+
+	return new_learner_scores
+
 async def main():
 	# resets the parameter server from the last training run
 	clear_promises = []
@@ -220,7 +231,7 @@ async def main():
 	# learner_ip_sort_key = lambda ip : int(ip.split('.')[-1])
 	# learner_ips.sort(key=learner_ip_sort_key)
 
-	# shuffling learners
+	# shuffling learner_ips
 	random.shuffle(learner_ips)
 
 	# selecting only the specified number of learners
@@ -237,21 +248,26 @@ async def main():
 	# benchmark scores is a list of a maps from (task, state) hashes to (training_rate_bps, data_time_spb, param_time_spb) tuples, each index being a learner
 	benchmark_scores = await global_cluster.rpcs.get_benchmark_scores()
 
+	# this line creates a new benchmark object that only gives the scores for mnist_cnn for multiple identical tasks
+	# benchmark_scores = [multiple_mnist_cnn(learner_scores) for learner_scores in benchmark_scores]
+
 	# getting the random parameters for this trials
 	worker_prices, state_distributions = initialize_parameters(num_learners)
-	# print(state_distributions)
 
 	# the variables set by the optimization formulations
-	association, allocation, iterations, EOL = None, None, None, None
+	association, allocation, iterations, time_predictions = None, None, None, None
+
+	for task_name in task_names:
+		 tasks[task_name]['deadline'] = tasks[task_name]['deadline'] + float(args.deadline_adjust)
 	
 	# try allocating a number of times, should mitigate 0 solution counts
 	for i in range(num_retries):
 		try:
 			if (args.data_allocation_regime == 'MED'):
-				association, allocation, iterations, EOL = MED(benchmark_scores, worker_prices, state_distributions)
+				association, allocation, time_predictions = MED(benchmark_scores, worker_prices, state_distributions, tasks)
 
 			elif (args.data_allocation_regime == 'MMTT'):
-				association, allocation, iterations, EOL = MMTT(benchmark_scores, worker_prices, state_distributions)
+				association, allocation, time_predictions = MMTT(benchmark_scores, worker_prices, state_distributions, tasks)
 
 			else:
 				raise(BaseException('unrecognized data_allocation_regime'))
@@ -262,12 +278,14 @@ async def main():
 			# if allocation fails, try another set of parameters
 			worker_prices, state_distributions = initialize_parameters(num_learners)
 
+	iterations = [tasks[association[i]]['num_training_iters'] for i in range(num_learners)]
+
 	print('-------------------- ', i)
 
 	print(association)
 	print(allocation)
 	print(worker_prices)
-	print(iterations)
+	print(time_predictions)
 
 	# if the optimization calculation fails, there's no need to proceed past this point
 	if (association == None):
@@ -275,28 +293,39 @@ async def main():
 
 	cost = sum([a*p for (a, p) in zip(allocation, worker_prices)])
 	results['cost'] = cost
-	results['EOL'] = EOL
 
 	# after allocation calculation confirms the state distributions are viable, transmit them to workers so they can manage their state dynamics
 	state_distributions = [(s, ) for s in state_distributions]
 	await global_cluster.rpcs.set_state_distribution(state_distributions)
 
 	# tells the learners which task they're associated with and how much data to use while training
-	task_settings = list(zip(association, allocation, iterations))
+
+	# incoming_task_name=config.default_task_name,
+	# incomming_num_shards=config.delta,
+	# incomming_num_iters=1,
+	# check_deadline_every=10,
+	# incoming_deadline=config.default_deadline
+
+	task_settings = list(zip(association, allocation, iterations, [10 for _ in range(num_learners)], [tasks[task_name]['deadline'] for task_name in association]))
 	await global_cluster.rpcs.set_training_regime(task_settings)
 
 	# we now create composite objects out of the workers assigned to each task, since the tasks can be processed independantly of one another
 	# this holds lists of worker handles, split by the task the worker is assigned, all workers in a list work on the same task
 	task_piles = {name: [] for name in task_names}
+	# this is a parallel dictionary that holds the prediction made for how long each worker will train for
+	prediction_piles = {name: [] for name in task_names}
 
 	for i in range(num_learners):
 		# the task the learner is assigned
 		task_name = association[i]
 		# adds that learner to the pile associated with that task
 		task_piles[task_name].append(learner_handles[i])
+		prediction_piles[task_name].append(time_predictions[i])
 
 	# clusters of workers all working on the same task, indexed by the name of the task
 	task_clusters = {task_name: WorkerComposite(pile) for task_name, pile in task_piles.items()}
+
+	results['time_prediction'] = prediction_piles
 
 	training_promises = []
 	for task_name in task_clusters:
@@ -306,7 +335,8 @@ async def main():
 	await asyncio.gather(*training_promises)
 
 	# records results to a file
-	# record_results(result_file_path)
+	print(result_file_path)
+	record_results(result_file_path)
 
 if (__name__ == '__main__'):
 	asyncio.run(main())
