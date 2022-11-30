@@ -63,7 +63,8 @@ def clear_params(task_name):
 
 @axon.worker.rpc(executor='Thread')
 def get_parameters(task_name):
-	return list(model_map[task_name].parameters())
+	P = model_map[task_name].parameters()
+	return [p.to('cpu') for p in P]
 
 @axon.worker.rpc(executor='Thread')
 def dummy_download(x, y):

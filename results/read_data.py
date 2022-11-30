@@ -6,7 +6,7 @@ import numpy as np
 sys.path.append('..')
 from tasks import tasks as tasks
 
-default_target_dir = 'Nov_1_meeting'
+default_target_dir = 'Nov_28_week'
 
 metrics = ['time_prediction_error', 'time_prediction', 'max_grad_div', 'mean_grad_div', 'resource_util', 'max_training_time', 'loss', 'acc', 'cost', 'total_training_time', 'training_time', 'worker_sat_ratio', 'task_sat_ratio']
 task_names = list(tasks.keys())
@@ -78,13 +78,13 @@ def get_data(scheme, state_distribution, experiment_name, trial_number, target_d
 		avg_total_training_time += total_training_time
 
 		# the satisfaction ration is the number of workers who returned before the deadline
-		deadline_offset = float(experiment_name.split('_')[0])
-		satisfied_deadlines = sum([sum([t < tasks[task_name]['deadline']+deadline_offset for t in T]) for T in training_times])
+		# deadline_offset = float(experiment_name.split('_')[0])
+		satisfied_deadlines = sum([sum([t < tasks[task_name]['deadline'] for t in T]) for T in training_times])
 		total_deadlines = sum([len(t) for t in training_times])
 		avg_worker_sat_ratio += satisfied_deadlines/total_deadlines
 
 		# adds a 1 or 0 depending if the task finished before the deadline this trial
-		if (total_training_time < len(training_times)*tasks[task_name]['deadline']+deadline_offset):
+		if (total_training_time < len(training_times)*tasks[task_name]['deadline']):
 			avg_task_sat_ratio += 1
 
 		# we now calculate the resource utilization using the max time of each GU cycle in the training run

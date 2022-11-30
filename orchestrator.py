@@ -63,9 +63,9 @@ def overwrite(a, b):
 args = overwrite(args, default_arguements)
 
 # this is where results will be recorded
-result_folder = './results/Nov_1_meeting/'
+result_folder = './results/Nov_28_week/'
 
-result_file = args.data_allocation_regime+'_'+args.state_distribution+'_'+str(args.deadline_adjust)+'_'+args.experiment_name+'_'+args.trial_index+'.json'
+result_file = args.data_allocation_regime+'_'+args.state_distribution+'_'+args.experiment_name+'_'+args.trial_index+'.json'
 result_file_path = path_join(result_folder, result_file)
 
 # this is the dict where metrics will be recorded for each training run
@@ -156,19 +156,18 @@ def initialize_parameters(num_learners):
 
 	if args.state_distribution == 'ideal':
 		# state distributions are ideal
-		state_distributions = [get_idle_dist() for i in range(num_learners)]
+		# state_distributions = [get_idle_dist() for i in range(num_learners)]
+
+		# creating state distributions for each learner
+		prime_state_dists = [create_state_distribution(float(args.heat)) for _ in range(num_learners)]
+		# the state distribution that's sent to learners will be a one-hot vector representing the state sampled from the corresponding distributions initialized above
+		# this will mean the worker's state is randomly set but constant, or static
+		states = [random.choices(range(len(state_names)), weights=state_dist, k=1).pop() for state_dist in prime_state_dists]
+		state_distributions = [get_one_hot(s) for s in states]
 
 	elif args.state_distribution == 'uncertain':
 		# randomly setting the state distributions of each worker, based on heat parameter
 		state_distributions = [create_state_distribution(float(args.heat)) for _ in range(num_learners)]
-
-	elif args.state_distribution == 'static':
-		# sampling from randomly set state distributions
-		prime_state_dists = [create_state_distribution(float(args.heat)) for _ in range(num_learners)]
-		# the state distribution that's sent to learners will be a one-hot vector representing the state selected from the distribution initialized above
-		# this will mean the worker's state is constant, or static
-		states = [random.choices(range(len(state_names)), weights=state_dist, k=1).pop() for state_dist in prime_state_dists]
-		state_distributions = [get_one_hot(s) for s in states]
 
 	else:
 		raise BaseException('unknown state_distribution: ', args.state_distribution)
@@ -257,8 +256,8 @@ async def main():
 	# the variables set by the optimization formulations
 	association, allocation, iterations, time_predictions = None, None, None, None
 
-	for task_name in task_names:
-		 tasks[task_name]['deadline'] = tasks[task_name]['deadline'] + float(args.deadline_adjust)
+	# for task_name in task_names:
+	# 	 tasks[task_name]['deadline'] = tasks[task_name]['deadline'] + float(args.deadline_adjust)
 	
 	# try allocating a number of times, should mitigate 0 solution counts
 	for i in range(num_retries):
