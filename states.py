@@ -10,7 +10,7 @@ device = config.training_device
 def idle_stressor():
 	pass
 
-def training_stressor(s):
+def matrix_stressor(s):
 	a = torch.randn([s, s]).to(device)
 	b = torch.randn([s, s]).to(device)
 	
@@ -19,28 +19,29 @@ def training_stressor(s):
 	a = b*c
 
 def download_stressor(ps, n):
-	for _ in range(n):
-		ps.rpcs.dummy_download.sync_call((5000, 5000), {})
+	return ps.rpcs.dummy_download.async_call((n, n), {})
 
 # this is the dict that describes each state
 state_dicts = {
 	'idle': {
 		'stressor_fn': idle_stressor,
-		# 'params': ( ),
-		# 'probability': 0.34
+		'stressor_size': None
 	}, 
 
 	'training': {
-		'stressor_fn': training_stressor,
-		# 'params': (50, ),
-		# 'probability': 0.33
+		'stressor_fn': matrix_stressor,
+		'stressor_size': config.training_stressor_size
 	},
 
 	'downloading': {
 		'stressor_fn': download_stressor,
-		# 'params': (ps, 50),
-		# 'probability': 0.33
+		'stressor_size': config.download_stressor_size
 	},
+
+	# 'gaming': {
+	# 	'stressor_fn': matrix_stressor,
+	# 	'stressor_size': config.gaming_stressor_size
+	# },
 
 }
 

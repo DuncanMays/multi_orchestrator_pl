@@ -6,9 +6,9 @@ import numpy as np
 sys.path.append('..')
 from tasks import tasks as tasks
 
-default_target_dir = 'Nov_28_week'
+default_target_dir = 'Dec_12_week/num_learner_trials'
 
-metrics = ['time_prediction_error', 'time_prediction', 'max_grad_div', 'mean_grad_div', 'resource_util', 'max_training_time', 'loss', 'acc', 'cost', 'total_training_time', 'training_time', 'worker_sat_ratio', 'task_sat_ratio']
+metrics = ['time_prediction_error', 'time_prediction', 'max_grad_div', 'mean_grad_div', 'resource_util', 'max_training_time', 'loss', 'acc', 'cost', 'total_training_time', 'training_time', 'worker_sat_ratio', 'task_sat_ratio', 'task_fullfillment']
 task_names = list(tasks.keys())
 
 def get_empty_data_point():
@@ -23,15 +23,9 @@ def get_acc_data(scheme, state_distribution, experiment_name, trial_number, task
 
 		return [d['acc'] for d in raw_data['training_metrics'][task_name]]
 
-MMTT = 0
-mmtt = 0
-MED = 0
-med = 0
-
 # Given a scheme (MED vs TT), a state distribution (ideal/uncertain), experiment name and trial number, report the cost, EOL, final loss and acc, as well as the average training time and sat ratio
 # each call to this function reads data from one training run
 def get_data(scheme, state_distribution, experiment_name, trial_number, target_dir=default_target_dir):
-	global MED, MMTT, med, mmtt
 
 	filename = scheme+'_'+state_distribution+'_'+experiment_name+'_'+str(trial_number)+'.json'
 	filepath = os.path.join('.', target_dir, filename)
@@ -58,6 +52,7 @@ def get_data(scheme, state_distribution, experiment_name, trial_number, target_d
 	avg_learner_util = 0
 	max_grad_div = 0
 	mean_grad_div = 0
+	avg_task_fullfillment = 0
 
 	for task_name in task_names:
 		# ditching the first index as that has training time zero
@@ -74,8 +69,9 @@ def get_data(scheme, state_distribution, experiment_name, trial_number, target_d
 
 		# this metric gives the total amount of time until convergence
 		# calculated as the sum of the amount of time for the longest running learner in each global update cycle
-		total_training_time = sum([max(t) for t in training_times])
-		avg_total_training_time += total_training_time
+		total_training_time = sum(max_times)
+		# avg_total_training_time += total_training_time
+		avg_total_training_time += sum([t>tasks[task_name]['deadline'] for t in max_times])/len(max_times)
 
 		# the satisfaction ration is the number of workers who returned before the deadline
 		# deadline_offset = float(experiment_name.split('_')[0])
@@ -96,6 +92,14 @@ def get_data(scheme, state_distribution, experiment_name, trial_number, target_d
 		max_grad_div += sum([d['max_div'] for d in raw_data['training_metrics'][task_name]])/len(training_times)
 		mean_grad_div += sum([d['mean_div'] for d in raw_data['training_metrics'][task_name]])/len(training_times)
 
+		# the number of batches allocated, is the number of training iterations times the number of shards, times the shard sice, divided by the batch size
+		total_batches = tasks[task_name]['num_training_iters']*500*tasks[task_name]['dataset_size'] // 32
+		# print(raw_data['training_metrics'][task_name][0])
+		try:
+			avg_task_fullfillment += sum([d['num_batches']/total_batches for d in raw_data['training_metrics'][task_name][1:]])/len(training_times)
+		except(KeyError):
+			avg_task_fullfillment += 0
+
 		avg_error = 0
 		for t in training_times:
 			predictions = raw_data['time_prediction'][task_name]
@@ -106,11 +110,12 @@ def get_data(scheme, state_distribution, experiment_name, trial_number, target_d
 	data_point['training_time'] = avg_training_time/len(task_names)
 	data_point['max_training_time'] = avg_max_training_time/len(task_names)
 	data_point['total_training_time'] = avg_total_training_time/len(task_names)
-	data_point['worker_sat_ratio'] = avg_worker_sat_ratio/len(task_names)
-	data_point['task_sat_ratio'] = avg_task_sat_ratio/len(task_names)
+	data_point['worker_sat_ratio'] = 100*avg_worker_sat_ratio/len(task_names)
+	data_point['task_sat_ratio'] = 100*avg_task_sat_ratio/len(task_names)
 	data_point['resource_util'] = avg_learner_util/len(task_names)
 	data_point['max_grad_div'] = max_grad_div/len(task_names)
 	data_point['mean_grad_div'] = mean_grad_div/len(task_names)
+	data_point['task_fullfillment'] = 100*avg_task_fullfillment/len(task_names)
 	data_point['time_prediction_error'] = data_point['time_prediction_error']/len(task_names)
 
 	return data_point

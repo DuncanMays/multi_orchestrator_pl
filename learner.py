@@ -13,7 +13,7 @@ from threading import Thread, Lock
 
 from config import config
 from tasks import tasks
-from states import state_dicts, get_state, get_state_distribution, stressor_thread, set_state, training_stressor, set_state_distribution
+from states import state_dicts, get_state, get_state_distribution, stressor_thread, set_state, set_state_distribution
 from utils import set_parameters, get_parameter_server
 from benchmark import dst_file
 
@@ -28,6 +28,7 @@ num_shards = config.delta
 num_iters = 1
 device = config.training_device
 check_deadline_interval = 10
+halting = True
 deadline = config.default_deadline
 
 # holds the learner's benchmark scores once they're read from disk
@@ -62,11 +63,11 @@ def set_training_regime(
 		incoming_task_name=config.default_task_name,
 		incomming_num_shards=config.delta,
 		incomming_num_iters=1,
-		check_deadline_every=10,
+		new_halting=True,
 		incoming_deadline=config.default_deadline
 	):
 
-	global task_name, num_shards, num_iters, check_deadline_interval, deadline
+	global task_name, num_shards, num_iters, halting, deadline
 
 	print('set training regime')
 	print(incoming_task_name)
@@ -74,7 +75,7 @@ def set_training_regime(
 	task_name = incoming_task_name
 	num_shards = incomming_num_shards
 	num_iters = incomming_num_iters
-	check_deadline_interval = check_deadline_every
+	halting = new_halting
 	deadline = incoming_deadline
 
 @axon.worker.rpc()
@@ -82,8 +83,8 @@ def get_data_allocated():
 	global num_shards
 	return num_shards
 
-download_stressor_size = 900
-training_stressor_size = 900
+download_stressor_size = config.download_stressor_size
+training_stressor_size = config.training_stressor_size
 
 @axon.worker.rpc()
 def local_update():
@@ -106,10 +107,14 @@ def local_update():
 	print('downloading parameters')
 
 	if (state == 'downloading'):
-		stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
-		stressor_handle.join()
+		state_desc = state_dicts[state]
+		stressor_fn = state_desc['stressor_fn']
+		stressor_handle = stressor_fn(ps, state_desc['stressor_size'])
 
 	parameters = ps.rpcs.get_parameters.sync_call((task_name, ), {})
+
+	if (state == 'downloading'):
+		stressor_handle.join()
 
 	print('instantiating neural network')
 	net = task_description['network_architecture']()
@@ -126,8 +131,9 @@ def local_update():
 	print('downloading data')
 
 	if (state == 'downloading'):
-		stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
-		stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
+		state_desc = state_dicts[state]
+		stressor_fn = state_desc['stressor_fn']
+		stressor_handle = stressor_fn(ps, state_desc['stressor_size'])
 
 	x_shards, y_shards = ps.rpcs.get_training_data.sync_call((task_name, num_shards, ), {})
 
@@ -164,15 +170,18 @@ def local_update():
 			optimizer.step()
 			optimizer.zero_grad()
 
-			if (state == 'training'):
-				training_stressor(training_stressor_size)
+			if (state == 'training') or (state == 'gaming'):
+				state_desc = state_dicts[state]
+				stressor_fn = state_desc['stressor_fn']
+				stressor_handle = stressor_fn(state_desc['stressor_size'])
 
-			if (batch_number%check_deadline_interval == 0):
+			if halting and (batch_number%check_deadline_interval == 0):
 				if check_deadline():
 					# the number of batches completed in this epoch
 					batches_completed += batch_number + 1
 					# raises flag indicating halt
 					halted = True
+					print('halted')
 					# end the loop over batches
 					break
 
@@ -191,8 +200,9 @@ def local_update():
 
 	print('uploading parameters to PS')
 	if (state == 'downloading'):
-		stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
-		stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
+		state_desc = state_dicts[state]
+		stressor_fn = state_desc['stressor_fn']
+		stressor_handle = stressor_fn(ps, state_desc['stressor_size'])
 
 	ps.rpcs.submit_update.sync_call((task_name, param_update, batches_completed, ), {})
 

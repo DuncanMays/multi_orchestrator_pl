@@ -15,13 +15,16 @@ config_dict = {
 	'parameter_server_ip': '192.168.2.19',
 	'parameter_server_port': 5002,
 	'training_device': get_training_device(),
-	'default_task_name': 'mnist_ffn',
-	'default_deadline': tasks['mnist_ffn']['deadline'],
+	'default_task_name': next(iter(tasks)),
+	'default_deadline': tasks[next(iter(tasks))]['deadline'],
 	'delta': 1,
 	'worker_price_mean': 1,
 	'worker_price_variance': 0.5,
 	'worker_price_max': 1.5,
 	'worker_price_min': 0.1,
+	'download_stressor_size': 900,
+	'training_stressor_size': 900,
+	'gaming_stressor_size': 500,
 }
 
 config = SimpleNamespace(**config_dict)

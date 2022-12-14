@@ -153,7 +153,7 @@ def run_model(workers, requesters, state_probabilities):
 	# indexes over workers and gives the index of the task they're assigned
 	task_indices = [0]*num_workers
 
-	for i in range(len(task_names)):
+	for i in range(num_requesters):
 		for j in range(num_workers):
 			if (association_2D[i][j] == 1.0):
 				task_indices[j] = i

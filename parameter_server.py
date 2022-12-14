@@ -15,8 +15,8 @@ if torch.cuda.is_available():
 data_map = {'mnist_ffn': (flat_x_train, y_train), 'mnist_cnn': (img_x_train, y_train), 'fashion': (fashion_train_images, fashion_train_labels)}
 test_data_map = {'mnist_ffn': (flat_x_test, y_test), 'mnist_cnn': (img_x_test, y_test), 'fashion': (fashion_test_images, fashion_test_labels)}
 
-# data_map = {'mnist_cnn_0': (img_x_train, y_train), 'mnist_cnn_1': (img_x_train, y_train), 'mnist_cnn_2': (img_x_train, y_train), 'mnist_cnn_3': (img_x_train, y_train), 'mnist_cnn_4': (img_x_train, y_train),}
-# test_data_map = {'mnist_cnn_0': (img_x_test, y_test), 'mnist_cnn_1': (img_x_test, y_test), 'mnist_cnn_2': (img_x_test, y_test), 'mnist_cnn_3': (img_x_test, y_test), 'mnist_cnn_4': (img_x_test, y_test),}
+# data_map = {'mnist_cnn_0': (img_x_train, y_train), 'mnist_cnn_1': (img_x_train, y_train), 'mnist_cnn_2': (img_x_train, y_train), 'mnist_cnn_3': (img_x_train, y_train), 'mnist_cnn_4': (img_x_train, y_train), 'mnist_cnn_5': (img_x_train, y_train), 'mnist_cnn_6': (img_x_train, y_train),}
+# test_data_map = {'mnist_cnn_0': (img_x_test, y_test), 'mnist_cnn_1': (img_x_test, y_test), 'mnist_cnn_2': (img_x_test, y_test), 'mnist_cnn_3': (img_x_test, y_test), 'mnist_cnn_4': (img_x_test, y_test), 'mnist_cnn_5': (img_x_test, y_test), 'mnist_cnn_6': (img_x_test, y_test),}
 
 
 model_map = {}
@@ -75,12 +75,12 @@ def dummy_upload(input):
 	return input.numel()
 
 @axon.worker.rpc()
-def submit_update(task_name, parameters, num_shards):
+def submit_update(task_name, parameters, num_batches):
 	global update_map
-	print('update submitted for ', task_name, num_shards)
+	print('update submitted for ', task_name, num_batches)
 	update_obj = {
 		'parameters': parameters,
-		'num_shards': num_shards,
+		'num_batches': num_batches,
 	}
 
 	update_map[task_name].append(update_obj)
@@ -101,7 +101,7 @@ def aggregate_parameters(task_name):
 	update_objs = update_map[task_name]
 
 	params = [u['parameters'] for u in update_objs]
-	weights = [u['num_shards'] for u in update_objs]
+	num_batches = [u['num_batches'] for u in update_objs]
 
 	print(f'aggregating for: {task_name}')
 
@@ -110,8 +110,8 @@ def aggregate_parameters(task_name):
 		return None, None
 
 	# normalizing weights
-	w_sum = sum(weights)
-	weights = [w/w_sum for w in weights]
+	total_batches = sum(num_batches)
+	weights = [w/total_batches for w in num_batches]
 
 	aggregate_parameters = average_parameters(params, weights)
 
@@ -129,7 +129,7 @@ def aggregate_parameters(task_name):
 	update_map[task_name] = []
 
 	# reports the max and mean parameter divergence back to the caller
-	return max(param_divs), sum(param_divs)/len(param_divs)
+	return total_batches, max(param_divs), sum(param_divs)/len(param_divs)
 
 @axon.worker.rpc()
 def assess_parameters(task_name, num_shards):

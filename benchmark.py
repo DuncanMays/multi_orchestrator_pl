@@ -4,7 +4,7 @@ from itertools import product
 from config import config
 from utils import get_parameter_server
 from tqdm import tqdm
-from states import get_state, set_state, allowed_states, stressor_thread, training_stressor
+from states import get_state, set_state, allowed_states, stressor_thread
 
 import time
 import pickle
@@ -32,8 +32,8 @@ def run_benchmarks():
 
 	return benchmark_scores
 
-download_stressor_size = 900
-training_stressor_size = 900
+download_stressor_size = config.download_stressor_size
+training_stressor_size = config.training_stressor_size
 
 def benchmark(task_name='mnist_ffn', num_downloads=1, num_shards=3):
 	print(f'running benchmark for {task_name} in state: {get_state()}')
@@ -54,11 +54,14 @@ def benchmark(task_name='mnist_ffn', num_downloads=1, num_shards=3):
 	for i in range(num_downloads):
 
 		if (state == 'downloading'):
-			stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
-			stressor_handle.join()
+			state_desc = state_dicts[state]
+			stressor_fn = state_desc['stressor_fn']
+			stressor_handle = stressor_fn(ps, state_desc['stressor_size'])
 
-		call_handle = ps.rpcs.get_parameters.async_call((task_name, ), {})
-		parameters = call_handle.join()
+		parameters = ps.rpcs.get_parameters.sync_call((task_name, ), {})
+
+		if (state == 'downloading'):
+			stressor_handle.join()
 
 	print('finished downloading parameters')
 	end_time = time.time()
@@ -79,12 +82,14 @@ def benchmark(task_name='mnist_ffn', num_downloads=1, num_shards=3):
 	start_time = time.time()
 
 	if (state == 'downloading'):
-			stressor_handle = ps.rpcs.dummy_download.async_call((download_stressor_size, download_stressor_size), {})
+		state_desc = state_dicts[state]
+		stressor_fn = state_desc['stressor_fn']
+		stressor_handle = stressor_fn(ps, state_desc['stressor_size'])
 
 	x_shards, y_shards = ps.rpcs.get_training_data.sync_call((task_name, num_shards, ), {})
 
 	if (state == 'downloading'):
-			stressor_handle.join()
+		stressor_handle.join()
 
 	end_time = time.time()
 
@@ -117,8 +122,10 @@ def benchmark(task_name='mnist_ffn', num_downloads=1, num_shards=3):
 		optimizer.step()
 		optimizer.zero_grad()
 
-		if (state == 'training'):
-			training_stressor(training_stressor_size)
+		if (state == 'training') or (state == 'gaming'):
+			state_desc = state_dicts[state]
+			stressor_fn = state_desc['stressor_fn']
+			stressor_handle = stressor_fn(state_desc['stressor_size'])
 
 	print('finished training')
 	end_time = time.time()

@@ -24,27 +24,14 @@ for index, arg in enumerate(arg_list):
 
 args = SimpleNamespace(**arg_dict)
 
-# the number of times each learner will download the model while benchmarking
-benchmark_downloads = 5
-# the number of shards each learner will train on while benchmarking
-benchmark_shards = 10
-# the number of shards that is used to assess the testing loss and accuracy of each neural net
-testing_shards = 10
-# the number of times the orchestrator will attempt the data allocation calculation before quiting
-num_retries = 10
-
-task_names = [task_name for task_name in tasks]
-state_names = [state_name for state_name in state_dicts]
-parameter_server = get_parameter_server()
-
 default_arguements = SimpleNamespace(
 	data_allocation_regime = 'MED',
-	state_distribution = 'uncertain',
+	state_distribution = 'ideal',
 	experiment_name = 'default',
 	trial_index = '-1',
 	num_learners = str(9),
 	heat = str(0.5),
-	num_tasks = len(task_names),
+	num_tasks = 3,
 	deadline_adjust = 0
 )
 
@@ -62,8 +49,24 @@ def overwrite(a, b):
 
 args = overwrite(args, default_arguements)
 
+# the number of times each learner will download the model while benchmarking
+benchmark_downloads = 5
+# the number of shards each learner will train on while benchmarking
+benchmark_shards = 10
+# the number of shards that is used to assess the testing loss and accuracy of each neural net
+testing_shards = 10
+# the number of times the orchestrator will attempt the data allocation calculation before quiting
+num_retries = 10
+
+# *** this line is needed to vary the number of tasks, but should otherwise be commented
+tasks = {key: tasks[key] for key in list(tasks.keys())[0: int(args.num_tasks)]}
+
+task_names = [task_name for task_name in tasks]
+state_names = [state_name for state_name in state_dicts]
+parameter_server = get_parameter_server()
+
 # this is where results will be recorded
-result_folder = './results/Nov_28_week/'
+result_folder = './results/Dec_12_week/'
 
 result_file = args.data_allocation_regime+'_'+args.state_distribution+'_'+args.experiment_name+'_'+args.trial_index+'.json'
 result_file_path = path_join(result_folder, result_file)
@@ -120,14 +123,14 @@ async def training_routine(task_name, cluster_handle, num_training_cycles):
 		timings = [t[0] for t in timings]
 
 		# aggregating parameters
-		max_div, mean_div = await parameter_server.rpcs.aggregate_parameters(task_name)
+		num_batches, max_div, mean_div = await parameter_server.rpcs.aggregate_parameters(task_name)
 
 		# assessing parameters
 		loss, acc = await parameter_server.rpcs.assess_parameters(task_name, testing_shards)
 		print(f'cycle completed on {task_name}, loss and accuracy: {loss, acc}')
 
 		# recording results
-		data_point = {'times': timings, 'acc': acc, 'loss': loss, 'max_div': max_div, 'mean_div': mean_div}
+		data_point = {'times': timings, 'acc': acc, 'loss': loss, 'max_div': max_div, 'mean_div': mean_div, 'num_batches': num_batches}
 		training_metrics[task_name].append(data_point)
 
 # the ideal state distribution
@@ -202,7 +205,7 @@ async def get_active_learners(learner_ips):
 def multiple_mnist_cnn(learner_scores):
 	new_learner_scores = {}
 
-	for i, state in product(range(5), state_names):
+	for i, state in product(range(int(args.num_tasks)), state_names):
 		new_learner_scores[('mnist_cnn_'+str(i), state)] = learner_scores[('mnist_cnn', state)]
 
 	return new_learner_scores
@@ -278,12 +281,14 @@ async def main():
 			worker_prices, state_distributions = initialize_parameters(num_learners)
 
 	iterations = [tasks[association[i]]['num_training_iters'] for i in range(num_learners)]
+	# allocation is a float, sometimes with numbers like 5.9999999999999999, which are meant to be 6 but cast down to int 5
+	allocation = [round(a) for a in allocation]
 
 	print('-------------------- ', i)
 
 	print(association)
 	print(allocation)
-	print(worker_prices)
+	# print(worker_prices)
 	print(time_predictions)
 
 	# if the optimization calculation fails, there's no need to proceed past this point
@@ -302,10 +307,10 @@ async def main():
 	# incoming_task_name=config.default_task_name,
 	# incomming_num_shards=config.delta,
 	# incomming_num_iters=1,
-	# check_deadline_every=10,
+	# halting=True,
 	# incoming_deadline=config.default_deadline
 
-	task_settings = list(zip(association, allocation, iterations, [10 for _ in range(num_learners)], [tasks[task_name]['deadline'] for task_name in association]))
+	task_settings = list(zip(association, allocation, iterations, [True for _ in range(num_learners)], [tasks[task_name]['deadline'] for task_name in association]))
 	await global_cluster.rpcs.set_training_regime(task_settings)
 
 	# we now create composite objects out of the workers assigned to each task, since the tasks can be processed independantly of one another

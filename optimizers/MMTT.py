@@ -1,12 +1,10 @@
 import gurobi
 from itertools import product
 
-from states import state_dicts
 from tasks import tasks, global_budget
 from optimizers.list_utils import get_multilist
 
 task_names = [name for name in tasks]
-state_names = [name for name in state_dicts]
 
 # this function manually instantiates an empty 2D list, this can't be done with [None]*5 because of aliasing issues
 def get_2D_list(W, H):
@@ -27,7 +25,6 @@ def run_model(workers, requesters):
 
 	num_workers = len(workers)
 	num_requesters = len(requesters)
-	num_states = len(state_dicts)
 
 	# the minimum number of shards assigned to each worker
 	delta = 1
@@ -110,7 +107,7 @@ def run_model(workers, requesters):
 	# indexes over workers and gives the index of the task they're assigned
 	task_indices = [0]*num_workers
 
-	for i in range(len(task_names)):
+	for i in range(num_requesters):
 		for j in range(num_workers):
 			if (association_2D[i][j] == 1.0):
 				task_indices[j] = i

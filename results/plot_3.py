@@ -1,63 +1,76 @@
+from read_data import avg_across_trials
 from matplotlib import pyplot as plt
-import json
-import os
-import sys
-sys.path.append('..')
-from tasks import tasks_0 as tasks
-task_names = tasks.keys()
+import math
 
-scheme_state_dists = [('MMTT', 'ideal'), ('MED', 'uncertain'), ('MMTT', 'uncertain')]
+# metrics = ['time_prediction', 'time_prediction_error', 'max_grad_div', 'mean_grad_div', 'resource_util', 'max_training_time', 'training_time', 'acc', 'loss', 'cost', 'worker_sat_ratio', 'task_sat_ratio', 'total_training_time']
+# metrics = ['worker_sat_ratio', 'max_training_time', 'resource_util', 'max_grad_div', 'task_fullfillment']
+metrics = ['worker_sat_ratio', 'task_fullfillment', 'max_training_time', 'resource_util', 'max_grad_div']
+scheme_state_dists = [('MMTT', 'ideal', 'blue'), ('MED', 'uncertain', 'orange'), ('MMTT', 'uncertain', 'green')]
+x_labels = [scheme+'_'+state_dist for (scheme, state_dist, _) in scheme_state_dists]
+x = [i+1 for i in range(len(x_labels))]
 
-def read_data(scheme, state_dist, experiment_name, trial_index):
+def plot(trial_indices):
+	for metric in metrics:
 
-	target_dir = './Oct_28_meeting/allocation_data'
-	# file_name = 'MMTT_uncertain_3_record_allocation_5.json'
-	file_name = scheme+'_'+state_dist+'_'+experiment_name+'_'+str(trial_index)+'.json'
-	filepath = os.path.join(target_dir, file_name)
+		y = []
+		std = []
+		for (scheme, state_dist, colour) in scheme_state_dists:
+			# remember to change the deadline in tasks.py
+			a = avg_across_trials(scheme, state_dist, 'verification', trial_indices)[metric]
+			b = avg_across_trials(scheme, state_dist, 'verification_3', trial_indices)[metric]
+			c = avg_across_trials(scheme, state_dist, 'verification_5', trial_indices)[metric]
 
-	data = None
-	with open(filepath, 'r') as f:
-		data = json.loads(f.read())
+			y.append((a+b+c)/3)
+			# std.append(avg_across_trials(scheme, state_dist, 'verification_8', trial_indices)[metric+'_stand_dev'])
+		
+		# err = [2*s/math.sqrt(len(trial_indices)) for s in std]
+		
+		y_round = [round(a, 2) for a in y]
+		print(metric, y_round)
 
-	return data
+		# plt.bar(x_labels, y, yerr=err, color=[colour for (_, _, colour) in scheme_state_dists])
 
-spread = lambda l : max(l) - min(l)
+		# plt.xlabel('scheme', size=15)
+		# plt.yticks(size=10)
 
-def average_over_trials(scheme, state_dist, experiment_name, trial_indices):
-	metric_fn = spread
-	avg_metric_dict = {name : 0 for name in task_names}
+		# if (metric == 'worker_sat_ratio'):
+		# 	plt.title('Satisfaction Ratio', size=20)
+		# 	plt.ylabel('Satisfaction Ratio (%)', size=15)
+		# 	plt.ylim(0, 100)
 
-	for t in trial_indices:
-		data = read_data(scheme, state_dist, experiment_name, t)
+		# if (metric == 'max_training_time'):
+		# 	plt.title('Training Time', size=20)
+		# 	plt.ylabel('Training Time', size=15)
 
-		for task_name in task_names:
-			avg_metric_dict[task_name] += metric_fn(data[task_name])
+		# if (metric == 'resource_util'):
+		# 	plt.title('Occupancy', size=20)
+		# 	plt.ylabel('Occupancy', size=15)
+		# 	plt.ylim(0.5, 1)
 
-	for task_name in task_names:
-		avg_metric_dict[task_name] = avg_metric_dict[task_name]/len(trial_indices)
+		# if (metric == 'max_grad_div'):
+		# 	plt.title('Parameter Divergence', size=20)
+		# 	plt.ylabel('Parameter Divergence', size=15)
 
-	return avg_metric_dict
+		# if (metric == 'task_fullfillment'):
+		# 	plt.title('Task Fullfillment', size=20)
+		# 	plt.ylabel('Task Fullfillment (%)', size=15)
+		# 	plt.ylim(0, 100)
 
-def print_data():
-	for scheme, state_dist in scheme_state_dists:
-		avg_data = average_over_trials(scheme, state_dist, '3_record_allocation', list(range(1, 31)))
-		avg_metric = 0
-		for t in task_names:
-			avg_metric += avg_data[t]/len(task_names)	
+		# plt.savefig('./Nov_28_week/'+metric+'_vs_num_learners.png')
+		# plt.show()
+		# plt.clf()
 
-		print(avg_metric)
+# trial_indices = list(range(1, 31))
+# trial_indices = list(range(11, 31))
+# trial_indices = list(range(1, 21))
+# trial_indices = list(range(1, 11)) + list(range(21, 31))
 
-def plot_data(data):
-	x = [i for i in range(len(data))]
-
-	plt.bar(x, data, color=['blue', 'orange', 'green'])
-
-	plt.title('Allocation Spread', size=15)
-	plt.xticks(x, ['MMTT_ideal', 'MED', 'MMTT_uncertain'], size=15)
-
-	plt.show()
 
 if (__name__ == '__main__'):
-	# print_data()
-	data = [2.3888888888888884, 6.666666666666666, 9.644444444444444]
-	plot_data(data)
+
+	plot(list(range(1, 31)))
+
+	# l = [list(range(1, 11)), list(range(11, 21)), list(range(21, 31))]
+
+	# for trial_indices in l:
+	# 	plot(trial_indices)
