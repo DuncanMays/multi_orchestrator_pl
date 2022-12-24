@@ -7,6 +7,7 @@ sys.path.append('..')
 from tasks import tasks as tasks
 
 default_target_dir = 'Dec_12_week/num_learner_trials'
+# default_target_dir = 'Dec_5_week'
 
 metrics = ['time_prediction_error', 'time_prediction', 'max_grad_div', 'mean_grad_div', 'resource_util', 'max_training_time', 'loss', 'acc', 'cost', 'total_training_time', 'training_time', 'worker_sat_ratio', 'task_sat_ratio', 'task_fullfillment']
 task_names = list(tasks.keys())

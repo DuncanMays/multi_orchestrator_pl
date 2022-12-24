@@ -2,7 +2,7 @@ from read_data import avg_across_trials
 from matplotlib import pyplot as plt
 import math
 
-trial_indices = range(1, 18)
+trial_indices = range(1, 31)
 # num_learners = [5, 7, 9]
 num_learners = [4, 6, 8, 10]
 # num_tasks = [1, 3, 5, 7]

@@ -59,14 +59,14 @@ testing_shards = 10
 num_retries = 10
 
 # *** this line is needed to vary the number of tasks, but should otherwise be commented
-tasks = {key: tasks[key] for key in list(tasks.keys())[0: int(args.num_tasks)]}
+# tasks = {key: tasks[key] for key in list(tasks.keys())[0: int(args.num_tasks)]}
 
 task_names = [task_name for task_name in tasks]
 state_names = [state_name for state_name in state_dicts]
 parameter_server = get_parameter_server()
 
 # this is where results will be recorded
-result_folder = './results/Dec_12_week/'
+result_folder = './results/Dec_12_week/num_learner_trials'
 
 result_file = args.data_allocation_regime+'_'+args.state_distribution+'_'+args.experiment_name+'_'+args.trial_index+'.json'
 result_file_path = path_join(result_folder, result_file)

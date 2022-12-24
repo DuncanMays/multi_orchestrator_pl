@@ -1,7 +1,7 @@
 import networks
 import torch
 
-global_budget = 500
+global_budget = 300
 
 tasks = {
 	'mnist_ffn': {
