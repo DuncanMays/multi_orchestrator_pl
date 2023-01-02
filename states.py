@@ -67,7 +67,7 @@ def set_state_distribution(new_distribution):
 	global state_distribution
 
 	if (sum(new_distribution) >= 1.01) or (sum(new_distribution) <= 0.99):
-		raise BaseException('invalid probability distribution')
+		raise BaseException(str(new_distribution)+' is an invalid probability distribution')
 
 	if (len(new_distribution) != len(allowed_states)):
 		raise BaseException('number of indices in distribution list doesn\'t match number of states')
@@ -89,7 +89,7 @@ def set_state(new_state=None):
 			state = new_state
 	
 	else:
-		Raise(BaseException('invalid state setting'))
+		raise BaseException(str(new_state)+' is an invalid state setting')
 
 def top_level_stressor():
 	print('top level stressor has begun')

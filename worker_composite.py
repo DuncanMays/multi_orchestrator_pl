@@ -25,7 +25,7 @@ def gather_wrapper(child_coros):
 	num_children = len(child_coros)
 	
 	async def gathered_coroutine(param_list=None):
-		# if no param list is specified, then child_coros probably don't take any parameters, therefor fill param_list with empty parameter tuples
+		# if no param_list is specified, then child_coros probably don't take any parameters, therefor fill param_list with empty parameter tuples
 		if (param_list == None):
 			param_list = [() for i in child_coros]
 

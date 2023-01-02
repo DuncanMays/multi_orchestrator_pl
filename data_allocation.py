@@ -10,8 +10,7 @@ from config import config
 from copy import copy
 
 from optimizers.MED_formulation import run_model as MED_model
-from optimizers.MMTT import run_model as MMTT_model
-
+from optimizers.MMTT import run_model as MMTT_model, get_2D_list
 
 def MED(benchmark_scores, worker_prices, state_probabilities, tasks):
 	worker_prices = copy(worker_prices)
@@ -52,7 +51,7 @@ def MED(benchmark_scores, worker_prices, state_probabilities, tasks):
 	print('performing optimization calculation')
 	return MED_model(learner_objs, task_objs, state_probabilities)
 
-def MMTT(benchmark_scores, worker_prices, state_distributions, tasks):
+def MMTT_uncertain(benchmark_scores, worker_prices, states, tasks):
 	worker_prices = copy(worker_prices)
 	task_names = [task_name for task_name in tasks]
 
@@ -66,7 +65,7 @@ def MMTT(benchmark_scores, worker_prices, state_distributions, tasks):
 		# state = random.choice(state_names)
 		# state = 'idle'
 
-		state = random.choices(state_names, weights=state_distributions[i], k=1).pop()
+		state = states[i]
 
 		compute_benchmarks = {task_names.index(task) : learner_scores[(task, state)][0] for task in task_names}
 		data_times = {task_names.index(task) : learner_scores[(task, state)][1] for task in task_names}
@@ -101,6 +100,70 @@ def MMTT(benchmark_scores, worker_prices, state_distributions, tasks):
 	# the first index iterates accross requesters, the second accross workers
 	# x, d, tp = MMTT_model(learner_objs, task_objs)
 	return MMTT_model(learner_objs, task_objs)
+
+def MMTT_ideal(benchmark_scores, worker_prices, learner_GUC_states, tasks):
+	worker_prices = copy(worker_prices)
+	task_names = [task_name for task_name in tasks]
+	num_GUC = len(learner_GUC_states[0])
+
+	task_objs = []
+	for task_name in task_names:
+
+		task = tasks[task_name]
+
+		# number of learning iterations, training deadline, data floor, budget
+		task_obj = SimpleNamespace(**{
+			'num_iters': task['num_training_iters'] ,
+			'deadline': task['deadline'],
+			'dataset_size': task['dataset_size'],
+		})
+
+		task_objs.append(task_obj)
+
+	association = None
+	fix_x = None
+	allocations = []
+	for gui in range(num_GUC):
+		states = [l[gui] for l in learner_GUC_states]
+		learner_objs = []
+		# this loop iterates over learners
+		for i, learner_scores in enumerate(benchmark_scores):
+			# learner_scores is a map from from (task, state) names to (training_rate_bps, data_time_spb, param_time_spb) tuples
+
+			state = states[i]
+
+			compute_benchmarks = {task_names.index(task) : learner_scores[(task, state)][0] for task in task_names}
+			data_times = {task_names.index(task) : learner_scores[(task, state)][1] for task in task_names}
+			param_times = {task_names.index(task) : learner_scores[(task, state)][2] for task in task_names}
+
+			learner_obj = SimpleNamespace(**{
+				'price': worker_prices[i],
+				'kappa': 1,
+				'training_rates': compute_benchmarks,
+				'data_times': data_times,
+				'param_times': param_times
+			})
+
+			learner_objs.append(learner_obj)
+
+		if association == None:
+			association, allocation, _ = MMTT_model(learner_objs, task_objs)
+
+			fix_x = get_2D_list(len(task_objs), len(learner_objs), d=0)
+
+			for learner_index, task_name in enumerate(association):
+				task_index = task_names.index(task_name)
+				fix_x[task_index][learner_index] = 1.0
+
+		else:
+			_, allocation, _ = MMTT_model(learner_objs, task_objs, fix_x)
+
+		allocations.append(allocation)
+	
+	# allocations is a list over GUI and then learners, we want to transpose it so that it's over learners then GUI
+	allocations_T = [[over_learners[i] for over_learners in allocations] for i in range(len(learner_objs))]
+
+	return association, allocations_T
 
 # def RSS(benchmark_scores, worker_prices, state_distributions):
 # 	worker_prices = copy(worker_prices)

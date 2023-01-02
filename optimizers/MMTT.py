@@ -1,22 +1,23 @@
-import gurobi
+import gurobipy as gurobi
 from itertools import product
 
 from tasks import tasks, global_budget
 from optimizers.list_utils import get_multilist
+from copy import copy
 
 task_names = [name for name in tasks]
 
 # this function manually instantiates an empty 2D list, this can't be done with [None]*5 because of aliasing issues
-def get_2D_list(W, H):
+def get_2D_list(W, H, d=None):
 	l = []
 	for w in range(W):
 		r = []
 		for h in range(H):
-			r.append(None)
+			r.append(copy(d))
 		l.append(r)
 	return l
 
-def run_model(workers, requesters):
+def run_model(workers, requesters, fixed_association=None):
 	# ? some sort of configuration object?
 	GRB = gurobi.GRB()
 	# the model
@@ -57,6 +58,10 @@ def run_model(workers, requesters):
 	m.setObjective(delay_objective, GRB.MINIMIZE)
 
 	# we now define contraints
+
+	# if an association is set, fix x to reflect it
+	if (fixed_association != None):
+		m.addConstrs(( x[i][j] == fixed_association[i][j] for (i, j) in combinations ), 'fix_x')
 
 	# the first constraints i0 to i2, are implicit in the system model
 

@@ -1,4 +1,4 @@
-import gurobi
+import gurobipy as gurobi
 from itertools import product
 from functools import lru_cache
 

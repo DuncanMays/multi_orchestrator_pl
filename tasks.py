@@ -1,13 +1,14 @@
 import networks
 import torch
 
+# the budget per global update iteration
 global_budget = 300
 
 tasks = {
 	'mnist_ffn': {
 		'num_training_iters': 2,
 		'num_epochs': 5,
-		'deadline': 55,
+		'deadline': 55+1000,
 		# 'deadline': 35,
 		'network_architecture': networks.ThreeNN,
 		'dataset_size': 30_000 // 500,
@@ -19,7 +20,7 @@ tasks = {
 	'mnist_cnn': {
 		'num_training_iters': 1,
 		'num_epochs': 5,
-		'deadline': 40,
+		'deadline': 40+1000,
 		# 'deadline': 25,
 		'network_architecture': networks.ConvNet,
 		'dataset_size': 30_000 // 500,
@@ -31,7 +32,7 @@ tasks = {
 	'fashion': {
 		'num_training_iters': 1,
 		'num_epochs': 5,
-		'deadline': 40,
+		'deadline': 40+1000,
 		# 'deadline': 30,
 		'network_architecture': networks.FashionNet,
 		'dataset_size': 10_000 // 500,

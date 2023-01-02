@@ -235,8 +235,6 @@ if (__name__ == '__main__'):
 		buffer = f.read()
 		benchmark_scores = pickle.loads(buffer)
 
-	
-
 	# sign into notice board, this is so that clients can discover this worker
 	axon.discovery.sign_in(ip=config.notice_board_ip)
 
