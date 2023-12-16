@@ -4,12 +4,13 @@ import os
 import numpy as np
 
 sys.path.append('..')
-from tasks import tasks as tasks
+from plot_tasks import tasks as tasks
+# from tasks import tasks as tasks
 
-default_target_dir = 'Dec_12_week/num_learner_trials'
-# default_target_dir = 'Dec_5_week'
+# default_target_dir = 'vary_learners_2_'
+default_target_dir = 'vary_tasks'
 
-metrics = ['time_prediction_error', 'time_prediction', 'max_grad_div', 'mean_grad_div', 'resource_util', 'max_training_time', 'loss', 'acc', 'cost', 'total_training_time', 'training_time', 'worker_sat_ratio', 'task_sat_ratio', 'task_fullfillment']
+metrics = ['data_throughput', 'max_grad_div', 'mean_grad_div', 'resource_util', 'max_training_time', 'loss', 'acc', 'cost', 'total_training_time', 'training_time', 'worker_sat_ratio', 'task_sat_ratio', 'task_fullfillment', 'data_drop_rate']
 task_names = list(tasks.keys())
 
 def get_empty_data_point():
@@ -34,7 +35,10 @@ def get_data(scheme, state_distribution, experiment_name, trial_number, target_d
 	with open(filepath, 'r') as f:
 		raw_data = json.loads(f.read())
 
-	task_names = raw_data['training_metrics'].keys()
+	num_tasks = len(list(raw_data['training_metrics'].keys()))
+	task_names = list(tasks.keys())
+	# num_tasks = int(experiment_name[-1])
+	task_names = task_names[0:num_tasks]
 
 	data_point = get_empty_data_point()
 
@@ -54,6 +58,8 @@ def get_data(scheme, state_distribution, experiment_name, trial_number, target_d
 	max_grad_div = 0
 	mean_grad_div = 0
 	avg_task_fullfillment = 0
+	avg_data_throughput = 0
+	avg_data_drop_rate = 0
 
 	for task_name in task_names:
 		# ditching the first index as that has training time zero
@@ -95,29 +101,35 @@ def get_data(scheme, state_distribution, experiment_name, trial_number, target_d
 
 		# the number of batches allocated, is the number of training iterations times the number of shards, times the shard sice, divided by the batch size
 		total_batches = tasks[task_name]['num_training_iters']*500*tasks[task_name]['dataset_size'] // 32
+		# the average number of batches completed per GUC over all the GUCs in the trial
+		complete_batches = sum([d['num_batches'] for d in raw_data['training_metrics'][task_name][1:]])/len(training_times)
+
+		if (total_batches < complete_batches):
+			total_batches = complete_batches
+
 		# print(raw_data['training_metrics'][task_name][0])
-		try:
-			avg_task_fullfillment += sum([d['num_batches']/total_batches for d in raw_data['training_metrics'][task_name][1:]])/len(training_times)
-		except(KeyError):
-			avg_task_fullfillment += 0
+		avg_task_fullfillment += complete_batches/total_batches
 
-		avg_error = 0
-		for t in training_times:
-			predictions = raw_data['time_prediction'][task_name]
-			avg_error = sum(abs(predictions[i] - t[i])/t[i] for i in range(len(t)))/len(t)
+		# avg_error = 0
+		# for t in training_times:
+		# 	predictions = raw_data['time_prediction'][task_name]
+		# 	avg_error = sum(abs(predictions[i] - t[i])/t[i] for i in range(len(t)))/len(t)
 
-		data_point['time_prediction_error'] += avg_error
+		# data_point['time_prediction_error'] += avg_error
+
+		avg_data_drop_rate += (total_batches - complete_batches)/total_batches
 		
 	data_point['training_time'] = avg_training_time/len(task_names)
 	data_point['max_training_time'] = avg_max_training_time/len(task_names)
 	data_point['total_training_time'] = avg_total_training_time/len(task_names)
 	data_point['worker_sat_ratio'] = 100*avg_worker_sat_ratio/len(task_names)
 	data_point['task_sat_ratio'] = 100*avg_task_sat_ratio/len(task_names)
-	data_point['resource_util'] = avg_learner_util/len(task_names)
+	data_point['resource_util'] = 100*avg_learner_util/len(task_names)
 	data_point['max_grad_div'] = max_grad_div/len(task_names)
 	data_point['mean_grad_div'] = mean_grad_div/len(task_names)
 	data_point['task_fullfillment'] = 100*avg_task_fullfillment/len(task_names)
-	data_point['time_prediction_error'] = data_point['time_prediction_error']/len(task_names)
+	# data_point['time_prediction_error'] = data_point['time_prediction_error']/len(task_names)
+	data_point['data_drop_rate'] = 100*avg_data_drop_rate/len(task_names)
 
 	return data_point
 

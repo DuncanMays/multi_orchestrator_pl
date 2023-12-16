@@ -30,7 +30,7 @@ default_arguements = SimpleNamespace(
 	state_distribution = 'uncertain',
 	experiment_name = 'default',
 	trial_index = '-1',
-	num_learners = str(9),
+	num_learners = str(10),
 	heat = float(0.5),
 	num_tasks = 3,
 	deadline_adjust = 0,
@@ -51,26 +51,21 @@ def overwrite(a, b):
 
 args = overwrite(args, default_arguements)
 
-# the number of times each learner will download the model while benchmarking
-benchmark_downloads = 5
-# the number of shards each learner will train on while benchmarking
-benchmark_shards = 10
 # the number of shards that is used to assess the testing loss and accuracy of each neural net
 testing_shards = 10
-# the number of times the orchestrator will attempt the data allocation calculation before quiting
-num_retries = 10
 # the number of Global Update Cycle required for each task 
 num_GUC = 5
 
 # *** this line is needed to vary the number of tasks, but should otherwise be commented
-# tasks = {key: tasks[key] for key in list(tasks.keys())[0: int(args.num_tasks)]}
+tasks = {key: tasks[key] for key in list(tasks.keys())[0: int(args.num_tasks)]}
+print(list(tasks.keys()))
 
 task_names = [task_name for task_name in tasks]
 state_names = [state_name for state_name in state_dicts]
 parameter_server = get_parameter_server()
 
 # this is where results will be recorded
-result_folder = './results/Dec_12_week/num_learner_trials'
+result_folder = './results/vary_tasks/'
 
 result_file = args.data_allocation_regime+'_'+args.state_distribution+'_'+args.experiment_name+'_'+args.trial_index+'.json'
 result_file_path = path_join(result_folder, result_file)
@@ -214,7 +209,7 @@ async def get_states():
 	return learner_states
 
 # runs num_training_cycles on the learners allocated to the task task_name
-async def training_routine(task_name, cluster_handle, num_training_cycles, learner_states, allocation):
+async def training_routine(task_name, cluster_handle, num_training_cycles, cluster_states, allocation):
 
 	# the number of workers on the given task
 	num_learners_on_task = len(cluster_handle.children)
@@ -262,8 +257,8 @@ async def training_routine(task_name, cluster_handle, num_training_cycles, learn
 
 		# setting the states on each learner
 		cluster_ips = [child.ip_addr for child in cluster_handle.children]
-		cluster_states = [(learner_states[ip]['states'][i], ) for ip in cluster_ips]
-		await cluster_handle.rpcs.set_state(cluster_states)
+		state_settings = [(cluster_states[ip]['states'][i], ) for ip in cluster_ips]
+		await cluster_handle.rpcs.set_state(state_settings)
 
 		# performs the local training routine on each worker on the task
 		timings = await cluster_handle.rpcs.local_update()
@@ -318,6 +313,10 @@ async def main():
 	# this line creates a new benchmark object that only gives the scores for mnist_cnn for multiple identical tasks
 	# benchmark_scores = [multiple_mnist_cnn(learner_scores) for learner_scores in benchmark_scores]
 
+	for learner_scores in benchmark_scores:
+		for state in state_names:
+			learner_scores[('fashion_2', state)] = learner_scores[('fashion', state)]
+
 	# we want a list of state distributions parallel to the list of benchmark scores
 	state_distributions = [learner_states[ip]['state_distribution'] for ip in learner_ips]
 	# a list accross learners of lists of learner states, parallel to benchmark scores
@@ -332,22 +331,49 @@ async def main():
 	# for task_name in task_names:
 	# 	 tasks[task_name]['deadline'] = tasks[task_name]['deadline'] + float(args.deadline_adjust)
 	
-	if (args.data_allocation_regime == 'MED')and (args.state_distribution == 'uncertain'):
+	if (args.data_allocation_regime == 'MED') and (args.state_distribution == 'uncertain'):
+
 		association, allocation, _ = MED(benchmark_scores, worker_prices, state_distributions, tasks)
 		# allocation is a float, sometimes with numbers like 5.9999999999999999, which are meant to be 6 but cast down to int 5
 		allocation = [round(a) for a in allocation]
 		cost = num_GUC*sum([a*p for (a, p) in zip(allocation, worker_prices)])
 
-	elif (args.data_allocation_regime == 'MMTT')and (args.state_distribution == 'uncertain'):
+	elif (args.data_allocation_regime == 'MMTT') and (args.state_distribution == 'uncertain'):
 		# the first states of each learner
-		first_states = [ls[0] for ls in states]
-		association, allocation, _ = MMTT_uncertain(benchmark_scores, worker_prices, first_states, tasks)
+		# first_states = [ls[0] for ls in states]
+		sampled_states = [random.choices(state_names, weights=state_dist, k=1).pop() for state_dist in state_distributions]
+		association, allocation, _ = MMTT_uncertain(benchmark_scores, worker_prices, sampled_states, tasks)
 		# allocation is a float, sometimes with numbers like 5.9999999999999999, which are meant to be 6 but cast down to int 5
 		allocation = [round(a) for a in allocation]
 		cost = num_GUC*sum([a*p for (a, p) in zip(allocation, worker_prices)])
 
-	elif (args.data_allocation_regime == 'MMTT')and (args.state_distribution == 'ideal'):
-		association, allocation = MMTT_ideal(benchmark_scores, worker_prices, states, tasks)
+	elif (args.data_allocation_regime == 'MMTT') and (args.state_distribution == 'ideal'):
+
+		association, allocation = None, None
+		
+		if args.new_states or not file_exists(learner_state_file):
+			# MMTT_ideal is very unstable in that frequently the model is unsolvable, so if we're reinitializing states, we'll try multiple times until we get a combination that is solvable
+			num_tries = 0
+
+			while True:
+				try:
+					print(f'solve attempt {num_tries}')
+					association, allocation = MMTT_ideal(benchmark_scores, worker_prices, states, tasks)
+					break
+
+				except(AttributeError):
+					num_tries += 1
+					if num_tries > 10:
+						raise BaseException('MMTT_ideal model is unsolvable')
+
+					# resetting learner states
+					learner_states = {ip: get_learner_states() for ip in learner_ips}
+					states = [learner_states[ip]['states'] for ip in learner_ips]
+		
+		else:
+			# if we're not specifying states this run, we have no choice but to use the saved states and hope they're solvable
+			association, allocation = MMTT_ideal(benchmark_scores, worker_prices, states, tasks)
+
 		# allocation is a float, sometimes with numbers like 5.9999999999999999, which are meant to be 6 but cast down to int 5
 		allocation = [[round(a) for a in A]	for A in allocation]
 		# a is a list of allocations for a single learner, the price of which is just the sum of allocations time the price for that learner
@@ -366,19 +392,9 @@ async def main():
 	print('cost:', cost)
 	# print('time_predictions:', time_predictions)
 
-
 	# if the optimization calculation fails, there's no need to proceed past this point
 	if (association == None):
 		exit()
-
-	# after allocation calculation confirms the state distributions are viable, transmit them to workers so they can manage their state dynamics
-	# state_distributions = [(s, ) for s in state_distributions]
-	# await global_cluster.rpcs.set_state_distribution(state_distributions)
-
-	# tells the learners which task they're associated with and how much data to use while training
-	# if (args.state_distribution == 'uncertain'):
-	# 	task_settings = list(zip(association, allocation, iterations, [True for _ in range(num_learners)], [tasks[task_name]['deadline'] for task_name in association]))
-	# 	await global_cluster.rpcs.set_training_regime(task_settings)
 
 	# we now create composite objects out of the workers assigned to each task, since the tasks can be processed independantly of one another
 	# this holds lists of worker handles, split by the task the worker is assigned, all workers in a list work on the same task

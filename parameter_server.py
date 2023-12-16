@@ -12,8 +12,8 @@ device = 'cpu'
 if torch.cuda.is_available():
 	device = 'cuda:0'
 
-data_map = {'mnist_ffn': (flat_x_train, y_train), 'mnist_cnn': (img_x_train, y_train), 'fashion': (fashion_train_images, fashion_train_labels)}
-test_data_map = {'mnist_ffn': (flat_x_test, y_test), 'mnist_cnn': (img_x_test, y_test), 'fashion': (fashion_test_images, fashion_test_labels)}
+data_map = {'mnist_ffn': (flat_x_train, y_train), 'mnist_cnn': (img_x_train, y_train), 'fashion': (fashion_train_images, fashion_train_labels), 'fashion_2': (fashion_train_images, fashion_train_labels)}
+test_data_map = {'mnist_ffn': (flat_x_test, y_test), 'mnist_cnn': (img_x_test, y_test), 'fashion': (fashion_test_images, fashion_test_labels), 'fashion_2': (fashion_test_images, fashion_test_labels)}
 
 # data_map = {'mnist_cnn_0': (img_x_train, y_train), 'mnist_cnn_1': (img_x_train, y_train), 'mnist_cnn_2': (img_x_train, y_train), 'mnist_cnn_3': (img_x_train, y_train), 'mnist_cnn_4': (img_x_train, y_train), 'mnist_cnn_5': (img_x_train, y_train), 'mnist_cnn_6': (img_x_train, y_train),}
 # test_data_map = {'mnist_cnn_0': (img_x_test, y_test), 'mnist_cnn_1': (img_x_test, y_test), 'mnist_cnn_2': (img_x_test, y_test), 'mnist_cnn_3': (img_x_test, y_test), 'mnist_cnn_4': (img_x_test, y_test), 'mnist_cnn_5': (img_x_test, y_test), 'mnist_cnn_6': (img_x_test, y_test),}
@@ -32,7 +32,7 @@ for task_name in tasks:
 def get_task_description(task_name):
 	return tasks[task_name]
 
-@axon.worker.rpc(executor='Thread')
+@axon.worker.rpc(executor='Thread', comms_pattern='duplex')
 def get_training_data(task_name, num_shards):
 	task_desc = tasks[task_name]
 	x_train, y_train = data_map[task_name]

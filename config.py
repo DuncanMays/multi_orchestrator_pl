@@ -9,10 +9,10 @@ def get_training_device():
 		return 'cpu'
 
 config_dict = {
-	'data_server_ip': '192.168.0.45',
+	'data_server_ip': '192.168.2.19',
 	'data_server_port': 5002,
-	'notice_board_ip': '192.168.0.45',
-	'parameter_server_ip': '192.168.0.45',
+	'notice_board_ip': '192.168.2.19',
+	'parameter_server_ip': '192.168.2.19',
 	'parameter_server_port': 5002,
 	'training_device': get_training_device(),
 	'default_task_name': next(iter(tasks)),

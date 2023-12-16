@@ -74,8 +74,9 @@ def run_model(workers, requesters, fixed_association=None):
 
 	# the last constraints are explicitly stated in the problem formulation
 
-	# c1 means the time delay must not exceed the deadline of requester i
+	# means no delay may exceed the ceiling variable
 	m.addConstrs((delay(i, j) <= c[i] for (i, j) in combinations) , 'c1.0')
+	# means ceiling variable can't exceed the deadline
 	m.addConstrs((c[i] <= requesters[i].deadline for i in range(num_requesters)) , 'c1.1')
 
 	# c2 is an energy constraint

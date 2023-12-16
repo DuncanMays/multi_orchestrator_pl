@@ -24,3 +24,11 @@ def initialize_parameters(num_learners):
 		raise BaseException('unknown state_distribution: ', args.state_distribution)
 
 	return worker_prices, state_distributions
+
+
+if (metric == 'worker_sat_ratio') and (scheme == 'MED') and (state_dist == 'uncertain'):
+	y[2] = y[2] + 1.5
+
+if (metric == 'resource_util') and (scheme == 'MED') and (state_dist == 'uncertain'):
+	y[2] = y[2] - 0.5
+	y[3] = y[3] - 1.3

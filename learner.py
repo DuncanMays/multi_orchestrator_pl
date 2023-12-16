@@ -17,6 +17,8 @@ from states import state_dicts, get_state, get_state_distribution, stressor_thre
 from utils import set_parameters, get_parameter_server
 from benchmark import dst_file
 
+axon.config.comms_config.request_timeout = 60
+
 # the price this worker charges per data sample
 price = 0.1
 num_test_shards = 20
@@ -86,7 +88,7 @@ def get_data_allocated():
 download_stressor_size = config.download_stressor_size
 training_stressor_size = config.training_stressor_size
 
-@axon.worker.rpc()
+@axon.worker.rpc(comms_pattern='duplex')
 def local_update():
 	print('performing local update routine')
 
