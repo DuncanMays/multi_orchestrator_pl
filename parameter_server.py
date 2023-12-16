@@ -1,6 +1,9 @@
 import axon
 import torch
 
+import numpy as np
+np.typeDict = np.sctypeDict
+
 from data.MNIST_data import img_x_train, flat_x_train, y_train, img_x_test, flat_x_test, y_test
 from data.fashion_data import fashion_train_images, fashion_train_labels, fashion_test_images, fashion_test_labels
 from tasks import tasks

@@ -55,7 +55,8 @@ class WorkerComposite():
 
 	def compose_RPCs(self):
 		# the names of each RPC on each child
-		child_RPC_names = [list(child.rpcs.__dict__) for child in self.children]
+		# child_RPC_names = [list(child.rpcs.__dict__) for child in self.children]
+		child_RPC_names = [list(dir(child.rpcs)) for child in self.children]
 		# The RPCs that this class offers are the intersection between the RPCs the children offer
 		self_RPC_names = reduce_intersection(child_RPC_names)
 		# the object that holds the stubs for the RPCs of each child, wrapped in asyncio gather calls
