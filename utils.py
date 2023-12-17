@@ -6,7 +6,7 @@ def get_parameter_server():
 	global parameter_server
 
 	if (parameter_server == None):
-		parameter_server = axon.client.RemoteWorker(config.parameter_server_ip)
+		parameter_server = axon.client.get_RemoteWorker(config.parameter_server_ip)
 
 	return parameter_server
 

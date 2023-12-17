@@ -114,11 +114,12 @@ def create_state_distribution(heat):
 # returns a boolean value of weather or not there's an active worker at the given IP
 async def test_ip(ip):
 	try:
-		handle = axon.client.RemoteWorker(ip)
+		handle = axon.client.get_RemoteWorker(ip)
 		await handle.rpcs.get_benchmark_scores()
 		return True
 
 	except(BaseException):
+		print('oh no!')
 		return False
 
 async def get_active_learners(learner_ips):
@@ -307,7 +308,7 @@ async def main():
 	# print('learner_states', learner_states)
 
 	# creates worker handles
-	learner_handles = [axon.client.RemoteWorker(ip) for ip in learner_ips]
+	learner_handles = [axon.client.get_RemoteWorker(ip) for ip in learner_ips]
 	# print(dir(learner_handles[0].rpcs))
 
 	# This worker composite sends commands to the whole cluster in a single line
