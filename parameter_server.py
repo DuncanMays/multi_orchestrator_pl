@@ -8,6 +8,7 @@ from data.MNIST_data import img_x_train, flat_x_train, y_train, img_x_test, flat
 from data.fashion_data import fashion_train_images, fashion_train_labels, fashion_test_images, fashion_test_labels
 from tasks import tasks
 from utils import set_parameters, average_parameters
+from concurrent.futures import ThreadPoolExecutor
 
 BATCH_SIZE = 32
 
@@ -31,11 +32,13 @@ update_map = {}
 for task_name in tasks:
 	update_map[task_name] = []
 
-@axon.worker.rpc(executor='Thread')
+e = ThreadPoolExecutor(max_workers=20)
+
+@axon.worker.rpc(executor=e)
 def get_task_description(task_name):
 	return tasks[task_name]
 
-@axon.worker.rpc(executor='Thread', comms_pattern='duplex')
+@axon.worker.rpc(executor=e, comms_pattern='duplex')
 def get_training_data(task_name, num_shards):
 	task_desc = tasks[task_name]
 	x_train, y_train = data_map[task_name]
@@ -47,7 +50,7 @@ def get_training_data(task_name, num_shards):
 
 	return x_train, y_train
 
-@axon.worker.rpc(executor='Thread')
+@axon.worker.rpc(executor=e)
 def get_testing_data(task_name, num_shards):
 	task_desc = tasks[task_name]
 	x_test, y_test = test_data_map[task_name]
@@ -64,16 +67,16 @@ def clear_params(task_name):
 	# clears the updates for that task
 	update_map[task_name] = []
 
-@axon.worker.rpc(executor='Thread')
+@axon.worker.rpc(executor=e)
 def get_parameters(task_name):
 	P = model_map[task_name].parameters()
 	return [p.to('cpu') for p in P]
 
-@axon.worker.rpc(executor='Thread')
+@axon.worker.rpc(executor=e)
 def dummy_download(x, y):
 	return torch.randn([x, y])
 
-@axon.worker.rpc(executor='Thread')
+@axon.worker.rpc(executor=e)
 def dummy_upload(input):
 	return input.numel()
 

@@ -114,7 +114,7 @@ def create_state_distribution(heat):
 # returns a boolean value of weather or not there's an active worker at the given IP
 async def test_ip(ip):
 	try:
-		handle = axon.client.get_RemoteWorker(ip)
+		handle = axon.client.get_RemoteWorker(ip, port=5000)
 		await handle.rpcs.get_benchmark_scores()
 		return True
 
@@ -161,7 +161,7 @@ def get_learner_states():
 # returns a dict from IP addresses to the description of state of each learner, including their state distribution and states
 async def get_states():
 	num_learners = config.default_num_learners
-	learner_state_file = './not_learner_states.json'
+	learner_state_file = './learner_states.json'
 	learner_states = None
 
 	if args.new_states or not file_exists(learner_state_file):
@@ -207,6 +207,7 @@ async def get_states():
 		learner_ips = list(learner_states.keys())
 		print(learner_ips)
 		active_ips = await get_active_learners(learner_ips)
+		print(active_ips)
 		if len(active_ips) < len(learner_ips):
 			raise BaseException('some of the required learners are not responsive')
 
@@ -308,7 +309,7 @@ async def main():
 	# print('learner_states', learner_states)
 
 	# creates worker handles
-	learner_handles = [axon.client.get_RemoteWorker(ip) for ip in learner_ips]
+	learner_handles = [axon.client.get_RemoteWorker(ip, port=5000) for ip in learner_ips]
 	# print(dir(learner_handles[0].rpcs))
 
 	# This worker composite sends commands to the whole cluster in a single line
@@ -395,7 +396,7 @@ async def main():
 
 	cost = 10
 	association = ['mnist_ffn']
-	allocation = [30]
+	allocation = [60]
 	iterations = [1]
 	time_predictions = [30]
 

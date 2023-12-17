@@ -19,7 +19,7 @@ def matrix_stressor(s):
 	a = b*c
 
 def download_stressor(ps, n):
-	return ps.rpcs.dummy_download.async_call((n, n), {})
+	return ps.rpcs.dummy_download(n, n)
 
 # this is the dict that describes each state
 state_dicts = {

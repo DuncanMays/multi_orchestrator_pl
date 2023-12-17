@@ -242,4 +242,4 @@ if (__name__ == '__main__'):
 
 	# starts worker
 	print('starting worker')
-	axon.worker.init()
+	axon.worker.init(port=5000)
