@@ -113,7 +113,7 @@ def local_update():
 		stressor_fn = state_desc['stressor_fn']
 		stressor_handle = stressor_fn(ps, state_desc['stressor_size'])
 
-	parameters = ps.rpcs.get_parameters.sync_call((task_name, ), {})
+	parameters = ps.rpcs.get_parameters(task_name).join()
 
 	if (state == 'downloading'):
 		stressor_handle.join()
@@ -137,7 +137,7 @@ def local_update():
 		stressor_fn = state_desc['stressor_fn']
 		stressor_handle = stressor_fn(ps, state_desc['stressor_size'])
 
-	x_shards, y_shards = ps.rpcs.get_training_data.sync_call((task_name, num_shards, ), {})
+	x_shards, y_shards = ps.rpcs.get_training_data(task_name, num_shards).join()
 
 	if (state == 'downloading'):
 		stressor_handle.join()
@@ -206,7 +206,7 @@ def local_update():
 		stressor_fn = state_desc['stressor_fn']
 		stressor_handle = stressor_fn(ps, state_desc['stressor_size'])
 
-	ps.rpcs.submit_update.sync_call((task_name, param_update, batches_completed, ), {})
+	ps.rpcs.submit_update(task_name, param_update, batches_completed).join()
 
 	if (state == 'downloading'):
 		stressor_handle.join()
